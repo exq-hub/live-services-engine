@@ -26,21 +26,21 @@ def check_active_filters(
     item: ItemInfo, active_filters: ActiveFilters, filters: dict[str, Filter]
 ) -> bool:
     """Check if an item passes all active filter criteria.
-    
+
     Validates an item against various filter types including single selection,
     multi-selection, numeric ranges, and count-based filters.
-    
+
     Args:
         item: The item to check against filters
         active_filters: The currently active filter configuration
         filters: Dictionary of available filter definitions
-        
+
     Returns:
         True if the item passes all active filters, False otherwise
     """
     for idx, name in enumerate(active_filters.names):
         name = name.replace(" ", "_").lower()
-        if filters[name]["type"] == 0: # Single
+        if filters[name]["type"] == 0:  # Single
             if filters[name]["values"][val] != item["metadata"][name]:
                 return False
         elif filters[name]["type"] == 1:  # Multi
@@ -105,11 +105,11 @@ def index_search(
     related: dict[str, list[int]],
 ) -> List[int]:
     """Search an Inverted File (IVF) index with clustering for efficient retrieval.
-    
+
     This function performs approximate nearest neighbor search using an IVF index
     structure with clustering. It progressively expands the search scope until
     enough results are found.
-    
+
     Args:
         query_vec: Query vector for similarity search
         n: Number of results to return
@@ -124,7 +124,7 @@ def index_search(
         metadata: Item metadata for filter validation
         filters: Filter definitions for validation
         related: Related items mapping for exclusion expansion
-        
+
     Returns:
         List of item IDs ranked by similarity to the query vector
     """
@@ -189,13 +189,14 @@ def index_search(
 @dataclass
 class Shot:
     """Represents a temporal shot or segment within a video.
-    
+
     Attributes:
         item_id: Unique identifier for the shot/item
         video_id: Identifier of the parent video
         start_time: Start time in seconds
         end_time: End time in seconds
     """
+
     item_id: str
     video_id: str
     start_time: float
@@ -205,13 +206,14 @@ class Shot:
 @dataclass
 class TimeRange:
     """Represents a temporal range for overlap calculations.
-    
+
     Attributes:
         identifier: Unique identifier for this time range
         video_id: Identifier of the associated video
         start_time: Range start time in seconds
         end_time: Range end time in seconds
     """
+
     identifier: str
     video_id: str
     start_time: float
@@ -221,12 +223,13 @@ class TimeRange:
 @dataclass
 class OverlapResult:
     """Result of temporal overlap calculation between shots and time ranges.
-    
+
     Attributes:
         item_id: Identifier of the overlapping shot
         overlap_duration: Duration of overlap in seconds
         overlap_ratio: Ratio of overlap to shot duration (0.0 to 1.0)
     """
+
     item_id: str
     overlap_duration: float
     overlap_ratio: float  # overlap / shot_duration
@@ -234,12 +237,12 @@ class OverlapResult:
 
 class ShotOverlapMapper:
     """Utility class for mapping temporal overlaps between shots and time ranges.
-    
+
     This class efficiently finds overlapping shots within specified time ranges
     using binary search on sorted shot boundaries. It's designed for video/audio
     content where precise temporal alignment is needed.
     """
-    
+
     def __init__(self):
         """Initialize the mapper with empty shot collections."""
         # Store shots grouped by video for efficient lookup

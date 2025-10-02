@@ -33,5 +33,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "licenseheaders>=0.8.8",
+    "reuse>=5.1.1",
     "ruff>=0.11.12",
 ]

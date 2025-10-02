@@ -348,14 +348,6 @@ class SharedResources(metaclass=SingletonMeta):
                 for idx, item in enumerate(self.metadata[collection]["items"])
             }
 
-            # Load IVF Index
-            # (
-            #     self.centroids[collection],
-            #     self.clusters[collection],
-            #     self.cluster_datapoint_idxs[collection],
-            #     self.item_to_datapoint[collection],
-            # ) = _load_ivf_index(self.config, collection)
-
             if "PCAEmbeddingsFile" in self.config[collection]:
                 (pca_model, std_scaler) = load_pca_data(self.config, collection)
                 self.pca[collection] = {}
@@ -370,13 +362,6 @@ class SharedResources(metaclass=SingletonMeta):
                 ]
 
             self.total_items[collection] = len(self.metadata[collection]["items"])
-
-            # self.rf_ann_index_props[collection] = (
-            #     self.centroids[collection],
-            #     self.clusters[collection],
-            #     self.cluster_datapoint_idxs[collection],
-            #     self.item_to_datapoint[collection],
-            # )
 
             self.thumbnail_path[collection] = self.config[collection][
                 "ThumbnailMediaURL"

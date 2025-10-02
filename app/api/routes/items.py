@@ -21,7 +21,7 @@ async def get_item_base_info(
     """Get basic information for an item."""
     try:
         result = item_service.get_item_base_info(request)
-        
+
         # Log the request
         background_tasks.add_task(
             _log_item_request,
@@ -33,11 +33,11 @@ async def get_item_base_info(
             item_name=result["name"],
             additional_data={
                 "mediaType": result["mediaType"],
-            }
+            },
         )
-        
+
         return result
-        
+
     except MetadataError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
@@ -53,10 +53,10 @@ async def get_item_detailed_info(
     """Get detailed information for an item."""
     try:
         result = item_service.get_item_detailed_info(request)
-        
+
         # Get item name for logging
         base_info = item_service.get_item_base_info(request)
-        
+
         # Log the request
         background_tasks.add_task(
             _log_item_request,
@@ -65,11 +65,11 @@ async def get_item_detailed_info(
             model_id=request.session_info.modelId,
             collection=request.session_info.collection,
             item_id=request.itemId,
-            item_name=base_info["name"]
+            item_name=base_info["name"],
         )
-        
+
         return result
-        
+
     except MetadataError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
@@ -85,10 +85,10 @@ async def get_related_items(
     """Get related items for an item."""
     try:
         result = item_service.get_related_items(request)
-        
+
         # Get item name for logging
         base_info = item_service.get_item_base_info(request)
-        
+
         # Log the request
         background_tasks.add_task(
             _log_item_request,
@@ -97,11 +97,11 @@ async def get_related_items(
             model_id=request.session_info.modelId,
             collection=request.session_info.collection,
             item_id=request.itemId,
-            item_name=base_info["name"]
+            item_name=base_info["name"],
         )
-        
+
         return result
-        
+
     except MetadataError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
@@ -117,12 +117,12 @@ async def is_item_excluded(
     """Check if item is in an excluded group."""
     try:
         result = item_service.is_item_excluded(request)
-        
+
         # Get item name for logging
         base_info = item_service.get_item_base_info(
             ItemRequest(itemId=request.itemId, session_info=request.session_info)
         )
-        
+
         # Log the request
         background_tasks.add_task(
             _log_item_request,
@@ -134,11 +134,11 @@ async def is_item_excluded(
             item_name=base_info["name"],
             additional_data={
                 "excluded": result["excludedOrNot"],
-            }
+            },
         )
-        
+
         return result
-        
+
     except MetadataError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
@@ -156,8 +156,10 @@ async def get_filters(
     try:
         filters = metadata_repo.get_filters(collection)
         if not filters:
-            raise HTTPException(status_code=404, detail=f"No filters found for collection: {collection}")
-        
+            raise HTTPException(
+                status_code=404, detail=f"No filters found for collection: {collection}"
+            )
+
         filter_objects = []
         for idx, k in enumerate(filters):
             obj = {
@@ -166,52 +168,64 @@ async def get_filters(
                 "name": k.replace("_", " ").capitalize(),
                 "filterType": filters[k]["type"],
             }
-            
+
             if obj["filterType"] in [2, 3]:  # NumberRange / NumberRangeMulti
                 obj["values"] = [
                     min(list(filters[k]["values"])),
                     max(list(filters[k]["values"])),
                 ]
             elif obj["filterType"] in [4, 5]:  # RangeLabel / RangeLabelMulti
-                obj["values"] = [(idx, el) for idx, el in enumerate(filters[k]["values"])]
+                obj["values"] = [
+                    (idx, el) for idx, el in enumerate(filters[k]["values"])
+                ]
             elif obj["filterType"] == 6:  # Count
                 obj["values"] = []
                 for val, cnt_min, cnt_max in filters[k]["values"]:
                     obj["values"].append(val)
                     obj["count"] = (cnt_min, cnt_max)
             else:  # Single / Multi
-                obj["values"] = [v.replace("_", " ").capitalize() for v in list(filters[k]["values"])]
-            
+                obj["values"] = [
+                    v.replace("_", " ").capitalize() for v in list(filters[k]["values"])
+                ]
+
             filter_objects.append(obj)
-        
+
         # Log the request
         background_tasks.add_task(
             _log_filter_request,
             action="Log Get Filters",
             session=session,
-            collection=collection
+            collection=collection,
         )
-        
+
         return {"filters": filter_objects}
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
-async def _log_item_request(action: str, session: str, model_id: int, collection: str,
-                           item_id: int, item_name: str, additional_data: Dict[str, Any] = None):
+async def _log_item_request(
+    action: str,
+    session: str,
+    model_id: int,
+    collection: str,
+    item_id: int,
+    item_name: str,
+    additional_data: Dict[str, Any] = None,
+):
     """Background task to log item requests."""
     from ...utils import dump_log_msgpack, get_current_timestamp
     from ...core.models import container
-    
+
     config = container.config_manager.config
     collection_config = config.collection_configs.get(collection)
     if collection_config and collection_config.log_directory:
         import uuid
+
         log_file = f"{collection_config.log_directory}/items_{uuid.uuid4().hex[:8]}.log"
     else:
         log_file = "./logs/items.log"
-    
+
     data = {
         "session": session,
         "modelId": model_id,
@@ -221,14 +235,14 @@ async def _log_item_request(action: str, session: str, model_id: int, collection
     }
     if additional_data:
         data.update(additional_data)
-    
+
     log_message = {
         "timestamp": get_current_timestamp(),
         "session": session,
         "action": action,
         "display_attrs": data,
     }
-    
+
     dump_log_msgpack(log_message, log_file)
 
 
@@ -236,15 +250,18 @@ async def _log_filter_request(action: str, session: str, collection: str):
     """Background task to log filter requests."""
     from ...utils import dump_log_msgpack, get_current_timestamp
     from ...core.models import container
-    
+
     config = container.config_manager.config
     collection_config = config.collection_configs.get(collection)
     if collection_config and collection_config.log_directory:
         import uuid
-        log_file = f"{collection_config.log_directory}/filters_{uuid.uuid4().hex[:8]}.log"
+
+        log_file = (
+            f"{collection_config.log_directory}/filters_{uuid.uuid4().hex[:8]}.log"
+        )
     else:
         log_file = "./logs/filters.log"
-    
+
     log_message = {
         "timestamp": get_current_timestamp(),
         "session": session,
@@ -252,5 +269,5 @@ async def _log_filter_request(action: str, session: str, collection: str):
         "display_attrs": {"collection": collection},
         "body": {},
     }
-    
+
     dump_log_msgpack(log_message, log_file)

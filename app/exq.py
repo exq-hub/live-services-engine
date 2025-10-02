@@ -189,7 +189,9 @@ def get_filters(
                 obj["values"].append(val)
                 obj["count"] = (cnt_min, cnt_max)
         else:  # Single / Multi
-            obj["values"] = [v.replace("_", " ").capitalize() for v in list(filters[k]["values"])]
+            obj["values"] = [
+                v.replace("_", " ").capitalize() for v in list(filters[k]["values"])
+            ]
         filter_objects.append(obj)
 
     log_message = {
@@ -230,7 +232,7 @@ def rf_search(
             collection=collection,
             shared=shared,
         )
-        
+
     rng = default_rng()
     emb_arr = zarr.open(store, mode="r")["embeddings"]
     neg = np.asarray(body.neg)
@@ -691,15 +693,29 @@ def get_item_detailed_info(
     group = shared.metadata[collection]["groups"][item["group"]]
     info_pairs: list[str, list[str]] = []
     for k in item["metadata"]:
-        if (k == "caption" or  k == "ocr" or
-            k == "utc_time" or k == "timezone" or
-            k == "segment_info"):
+        if (
+            k == "caption"
+            or k == "ocr"
+            or k == "utc_time"
+            or k == "timezone"
+            or k == "segment_info"
+        ):
             continue
-        name = str(k).replace('_', ' ').capitalize()
+        name = str(k).replace("_", " ").capitalize()
         if isinstance(item["metadata"][k], list) and len(item["metadata"][k]) > 0:
-            info_pairs.append((name, [str(s).replace('_', ' ').capitalize() for s in item["metadata"][k]]))
+            info_pairs.append(
+                (
+                    name,
+                    [
+                        str(s).replace("_", " ").capitalize()
+                        for s in item["metadata"][k]
+                    ],
+                )
+            )
         else:
-            info_pairs.append((name, [str(item["metadata"][k]).replace('_', ' ').capitalize()]))
+            info_pairs.append(
+                (name, [str(item["metadata"][k]).replace("_", " ").capitalize()])
+            )
 
     for k in group:
         if isinstance(group[k], list) and len(group[k]) > 0:
