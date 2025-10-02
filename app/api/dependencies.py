@@ -36,7 +36,7 @@ def get_index_repository(app_container=Depends(get_container)):
 def get_search_service(
     model_manager=Depends(get_model_manager),
     index_repo=Depends(get_index_repository),
-    metadata_repo=Depends(get_metadata_repository)
+    metadata_repo=Depends(get_metadata_repository),
 ) -> SearchService:
     """Get the search service."""
     return SearchService(model_manager, index_repo, metadata_repo)
@@ -44,7 +44,7 @@ def get_search_service(
 
 def get_item_service(
     metadata_repo=Depends(get_metadata_repository),
-    config_manager=Depends(get_config_manager)
+    config_manager=Depends(get_config_manager),
 ) -> ItemService:
     """Get the item service."""
     return ItemService(metadata_repo, config_manager)
@@ -56,4 +56,5 @@ def get_logging_service() -> LoggingService:
     # For now, we'll create a basic instance
     # In production, this should come from the app state
     from fastapi import HTTPException
+
     raise HTTPException(status_code=500, detail="Logging service not initialized")
