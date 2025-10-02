@@ -1,0 +1,65 @@
+[DEFAULT]
+# Device for running models: auto, cpu, cuda, mps, or cuda:N
+ModelDevice = auto
+
+# Comma-separated list of collection names
+Collections = collection1, collection2
+
+[SERVER]
+# Server host and port settings
+Host = 127.0.0.1
+Port = 8000
+Reload = True
+
+[LOGGING]
+# Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+Level = INFO
+
+# ============================================================================
+# COLLECTION CONFIGURATIONS
+# ============================================================================
+
+[collection1]
+# Enable or disable this collection
+Enabled = True
+
+# Required files
+CLIPIndex = ./data/collection1/clip_index.npy
+MetadataFile = ./data/collection1/metadata.json
+FiltersFile = ./data/collection1/filters.json
+RelatedItemsFile = ./data/collection1/related_items.json
+
+# Media URLs
+ThumbnailMediaURL = https://example.com/thumbnails/
+OriginalMediaURL = https://example.com/originals/
+
+# Optional: Caption search functionality
+CaptionIndex = ./data/collection1/caption_index.npy
+CaptionShotMappingFile = ./data/collection1/caption_mapping.json
+SegmentDuration = 2.0
+
+# Optional: PCA-based search
+PCAModel = ./data/collection1/pca_model.pkl
+StdScaler = ./data/collection1/std_scaler.pkl
+PCAEmbeddingsFile = ./data/collection1/pca_embeddings.npy
+EmbeddingsFile = ./data/collection1/embeddings.npy
+
+# Optional: Logging
+LogDirectory = ./logs/collection1/
+
+[collection2]
+# Enable or disable this collection
+Enabled = False
+
+# Required files
+CLIPIndex = ./data/collection2/clip_index.npy
+MetadataFile = ./data/collection2/metadata.json
+FiltersFile = ./data/collection2/filters.json
+RelatedItemsFile = ./data/collection2/related_items.json
+
+# Media URLs
+ThumbnailMediaURL = https://example.com/collection2/thumbnails/
+OriginalMediaURL = https://example.com/collection2/originals/
+
+# Optional: Logging
+LogDirectory = ./logs/collection2/
