@@ -4,6 +4,8 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
+from app.repositories.database_repository import MetadataDBRepository
+
 from ...schemas import ItemRequest, IsExcludedRequest, SessionInfo, Filter
 from ...services.item_service import ItemService
 from ...core.exceptions import MetadataError
@@ -141,6 +143,36 @@ async def is_item_excluded(
 
     except MetadataError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.get("/filters?session={session}&collection={collection}&filterId={filter_id}&tagtype={tagtype}")
+async def get_selected_filters_values(
+    session: str,
+    collection: str,
+    filter_id: str,
+    tagtype: str,
+    background_tasks: BackgroundTasks,
+    metadata_repo: MetadataDBRepository=Depends(get_metadata_repository),
+) -> Dict[str, List]:
+    """Get values for selected filters in a collection."""
+    try:
+        filter_id = int(filter_id)
+        filter_values = metadata_repo.get_filter_values(collection, filter_id, tagtype)
+
+        # Log the request
+        background_tasks.add_task(
+            _log_filter_request,
+            action="Log Get Selected Filters",
+            session=session,
+            collection=collection,
+        )
+
+        return {}
+
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid parameter")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
