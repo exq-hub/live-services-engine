@@ -261,6 +261,23 @@ async def _log_total_items_request(session: str, collection: str, total_items: i
     dump_log_msgpack(log_message, "./logs/admin.log")
 
 
+async def _log_filters_request(session: str, collection: str, total_items: int):
+    """Background task to log total items request."""
+    from ...utils import dump_log_msgpack, get_current_timestamp
+
+    log_message = {
+        "timestamp": get_current_timestamp(),
+        "action": "Get filter definitions for collection request",
+        "data": {
+            "session": session,
+            "collection": collection,
+            "total_items": total_items,
+        },
+    }
+
+    dump_log_msgpack(log_message, "./logs/admin.log")
+
+
 async def _log_model_operation(
     action: str, session: str, model_id: int, collection: str, body_json: str
 ):
