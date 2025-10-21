@@ -164,6 +164,7 @@ class ItemRequest(BaseModel):
     """
 
     itemId: int
+    filter_ids: Optional[list[int]] = []
     session_info: SessionInfo
 
 
