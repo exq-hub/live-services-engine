@@ -4,6 +4,9 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, BackgroundTasks, Depends
 
+from app.repositories.database_repository import MetadataDBRepository
+from app.repositories.metadata_repository import MetadataRepository
+
 from ...schemas import (
     SessionInfo,
     AddOrRemoveModelRequest,
@@ -43,7 +46,7 @@ async def init_session(
 async def get_total_items(
     request: SessionInfo,
     background_tasks: BackgroundTasks,
-    metadata_repo=Depends(get_metadata_repository),
+    metadata_repo: MetadataRepository | MetadataDBRepository=Depends(get_metadata_repository),
 ) -> Dict[str, int]:
     """Get total number of items in a collection."""
     try:
@@ -58,6 +61,31 @@ async def get_total_items(
         )
 
         return {"total_items": total_items}
+
+    except Exception as e:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@router.post("/info/filters")
+async def get_filters(
+    request: SessionInfo,
+    background_tasks: BackgroundTasks,
+    metadata_repo: MetadataRepository | MetadataDBRepository=Depends(get_metadata_repository),
+) -> Dict[str, Any]:
+    """Get available filter definitions for a collection"""
+    try:
+        filters = metadata_repo.get_filters(request.collection) or {}
+
+        # Log the request
+        background_tasks.add_task(
+            _log_filters_request,
+            session=request.session,
+            collection=request.collection,
+            filters=filters,
+        )
+
+        return {"filters": filters}
 
     except Exception as e:
         from fastapi import HTTPException
