@@ -2,6 +2,9 @@
 
 from typing import Dict, List, Optional, Tuple, Any
 
+from app.repositories.database_repository import MetadataDBRepository
+from app.repositories.metadata_repository import MetadataRepository
+
 from ..schemas import ItemRequest, IsExcludedRequest
 from ..core.exceptions import MetadataError
 
@@ -10,7 +13,7 @@ class ItemService:
     """Service for item-related operations."""
 
     def __init__(self, metadata_repository, config_manager):
-        self.metadata_repo = metadata_repository
+        self.metadata_repo: MetadataRepository | MetadataDBRepository = metadata_repository
         self.config_manager = config_manager
 
     def get_item_base_info(self, request: ItemRequest) -> Dict[str, Any]:
@@ -52,7 +55,7 @@ class ItemService:
     def get_item_detailed_info(self, request: ItemRequest) -> Dict[str, Any]:
         """Get detailed information for an item."""
         collection = request.session_info.collection
-        item = self.metadata_repo.get_item(collection, request.itemId)
+        item = self.metadata_repo.get_item(collection, request.itemId, request.filter_ids)
 
         if not item:
             raise MetadataError(
