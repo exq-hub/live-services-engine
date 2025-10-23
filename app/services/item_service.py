@@ -65,13 +65,15 @@ class ItemService:
         group = self.metadata_repo.get_group(collection, item["group"])
 
         # Process item metadata
-        info_pairs = []
+        info_pairs = {}
+        info_pairs['item'] = []
         if "metadata" in item:
-            info_pairs.extend(self._process_metadata(item["metadata"]))
+            info_pairs['item'].extend(self._process_metadata(item["metadata"]))
 
         # Process group metadata
         if group:
-            info_pairs.extend(self._process_group_data(group))
+            info_pairs['group'] = []
+            info_pairs['group'].extend(self._process_group_data(group))
 
         return {"infoPairs": info_pairs}
 
@@ -119,16 +121,10 @@ class ItemService:
         """Process item metadata into display format."""
         info_pairs = []
 
-        # Skip certain metadata fields
-        skip_fields = {"caption", "ocr", "utc_time", "timezone", "segment_info"}
-
         for key, value in metadata.items():
-            if key in skip_fields:
-                continue
-
             display_name = key.replace("_", " ").capitalize()
 
-            if isinstance(value, list) and len(value) > 0:
+            if isinstance(value, list):
                 display_values = [str(s).replace("_", " ").capitalize() for s in value]
             else:
                 display_values = [str(value).replace("_", " ").capitalize()]

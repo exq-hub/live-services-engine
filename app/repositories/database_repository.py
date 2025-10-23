@@ -161,9 +161,10 @@ class DatabaseRepository:
 
     def get_media_metadata(
             self, 
-            cursor: duckdb.DuckDBPyCursor,
-            media_id: int, 
-            filters: List[str]
+            cursor: duckdb.DuckDBPyConnection,
+            item_id: int, 
+            filters: List[str],
+            mapped: bool=False
     ) -> Dict[str, Any]:
         """Retrieve metadata for a specific media item.
 
@@ -171,10 +172,16 @@ class DatabaseRepository:
             cursor: Database cursor
             media_id: ID of the media item
             filters: List of metadata fields to include, if empty include all
+            mapped: Whether the item_id is already mapped to media_id
         
         Returns:
             Metadata dictionary for the media item
         """
+
+        if not mapped:
+            media_id = self._item_datapoint_mapping_cache[cursor][item_id]
+        else:
+            media_id = item_id
         # Get metadata from tags
         metadata = {}
         query = """
@@ -184,10 +191,10 @@ class DatabaseRepository:
                     tt.description as tagtype,
                 FROM medias m
                 JOIN taggings tgs ON m.id = tgs.media_id
-                JOIN tags ON tgs.tag_id = t.id
+                JOIN tags t ON tgs.tag_id = t.id
                 JOIN tagsets ts ON t.tagset_id = ts.id
-                JOIN tagtypes tt ON ts.tagtype_id = tt.id
-                WHERE media_id = ?
+                JOIN tag_types tt ON ts.tagtype_id = tt.id
+                WHERE m.id = ?
                 """
         tag_info = None
         if filters:
@@ -196,7 +203,7 @@ class DatabaseRepository:
             tag_info = cursor.execute(query, [media_id, filters]).fetchdf()
         else:
             query += " ORDER BY ts.id"
-            tag_info = cursor.execute(query).fetchdf()
+            tag_info = cursor.execute(query, [media_id]).fetchdf()
 
         # Group tags by tagtype and tagset
         grouped = (
@@ -215,9 +222,12 @@ class DatabaseRepository:
                 FROM {row.tagtype}_tags
                 WHERE id IN ({tag_ids_placeholder})
                 """,
-                [row.tag_ids]
+                row.tag_ids
             ).fetchall()
-            metadata[row.tagset_name] = [name[0] for name in tag_names]
+            if len(tag_names) > 1:
+                metadata[row.tagset_name] = [name[0] for name in tag_names]
+            else:
+                metadata[row.tagset_name] = tag_names[0][0]
         return metadata
 
 
@@ -236,7 +246,7 @@ class DatabaseRepository:
                 if self._db_type[collection] == 'duckdb':
                     rows = cursor.execute(
                         """
-                        SELECT media_id
+                        SELECT id
                         FROM medias
                         WHERE group_id = (SELECT group_id FROM medias WHERE id = ?)
                         """,
@@ -262,10 +272,9 @@ class DatabaseRepository:
         """
         if item_id not in self._metadata_cache:
             try:
-                mapped_item_id = self._item_datapoint_mapping_cache[collection].get(str(item_id))
+                mapped_item_id = self._item_datapoint_mapping_cache[collection][item_id]
                 item = {}
-                item['item_id'] = str(item_id)
-                    
+                item['item_id'] = item_id
                 with self._db_connection[collection].cursor() as cursor:
                     if self._db_type[collection] == 'duckdb':
                         media_info = cursor.execute("""
@@ -273,15 +282,16 @@ class DatabaseRepository:
                                        m.group_id,
                                        m2.file_uri as group_uri
                                 FROM medias m
-                                JOIN medias m2 ON m.id = m2.group_id
+                                JOIN medias m2 ON m2.id = m.group_id
                                 WHERE m.id = ?
                                 """, [mapped_item_id]).fetchone()
                         # TODO Consider renaming fields for clarity 
                         item['thumbnail_uri'] = media_info[0]
                         item['group'] = media_info[1]
                         item['media_uri'] = media_info[2]
-                        item['metadata'] = self.get_media_metadata(cursor, mapped_item_id, filters)
+                        item['metadata'] = self.get_media_metadata(cursor, mapped_item_id, filters, mapped=True)
                     self._metadata_cache[item_id] = item
+                    return item
             except Exception as e:
                 raise DatabaseError(f"Failed to retrieve metadata for item {item_id}: {e}")
         else:
@@ -302,7 +312,7 @@ class DatabaseRepository:
             try:
                 with self._db_connection[collection].cursor() as cursor:
                     if self._db_type[collection] == 'duckdb':
-                        group_info = self.get_media_metadata(cursor, group_id, [])
+                        group_info = self.get_media_metadata(cursor, group_id, [], mapped=True)
                         return group_info
                 return None
         
