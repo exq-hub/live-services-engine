@@ -510,6 +510,7 @@ dependencies = [
     { name = "ollama" },
     { name = "open-clip-torch" },
     { name = "orjson" },
+    { name = "pandas" },
     { name = "rangehttpserver" },
     { name = "requests" },
     { name = "rich" },
