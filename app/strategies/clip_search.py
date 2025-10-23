@@ -114,9 +114,10 @@ class CLIPSearchStrategy(TextSearchStrategy):
         active_n = n
         total_items = self.metadata_repo.get_total_items(collection)
         if isinstance(self.metadata_repo, DatabaseRepository):
-            passed_ids = self.metadata_repo.get_filtered_item_ids(
-                collection, filters
-            )
+            passed_ids = []
+            # passed_ids = self.metadata_repo.get_filtered_media_ids(
+            #     collection, filters
+            # )
         else:
             metadata = self.metadata_repo.get_metadata(collection)
             collection_filters = self.metadata_repo.get_filters(collection)
