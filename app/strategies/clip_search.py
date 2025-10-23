@@ -6,6 +6,9 @@ from typing import List, Optional
 import torch
 import numpy as np
 
+from app.repositories.database_repository import DatabaseRepository
+from app.repositories.metadata_repository import MetadataRepository
+
 from .base import TextSearchStrategy
 from ..schemas import ActiveFilters, ActiveFiltersDB
 from ..search_utils import check_active_filters
@@ -139,6 +142,8 @@ class CLIPSearchStrategy(TextSearchStrategy):
                     ):
                         suggestions.append(idx)
 
+            if isinstance(self.metadata_repo, DatabaseRepository):
+                suggestions = self.metadata_repo.get_media_ids(collection, suggestions)
             # Check if we have enough results
             if len(suggestions) >= n:
                 return suggestions[:n]
