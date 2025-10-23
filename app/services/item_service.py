@@ -2,7 +2,7 @@
 
 from typing import Dict, List, Optional, Tuple, Any
 
-from app.repositories.database_repository import MetadataDBRepository
+from app.repositories.database_repository import DatabaseRepository
 from app.repositories.metadata_repository import MetadataRepository
 
 from ..schemas import ItemRequest, IsExcludedRequest
@@ -13,7 +13,7 @@ class ItemService:
     """Service for item-related operations."""
 
     def __init__(self, metadata_repository, config_manager):
-        self.metadata_repo: MetadataRepository | MetadataDBRepository = metadata_repository
+        self.metadata_repo: MetadataRepository | DatabaseRepository = metadata_repository
         self.config_manager = config_manager
 
     def get_item_base_info(self, request: ItemRequest) -> Dict[str, Any]:

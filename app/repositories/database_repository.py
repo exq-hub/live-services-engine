@@ -2,9 +2,11 @@ import duckdb
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ..core.exceptions import MetadataError
+from app.schemas import ActiveFiltersDB
 
-class MetadataDBRepository:
+from ..core.exceptions import DatabaseError
+
+class DatabaseRepository:
     """Repository class for managing metadata, filters, and related item data.
 
     This repository provides access to collection metadata, filters for search
@@ -23,8 +25,8 @@ class MetadataDBRepository:
     def load_database(
             self, collection: str,
             database_file: str,
+            manifest_file: str='',
             database: str='duckdb',
-            manifest_file: str=''
     ) -> None:
         """
         Open connection to the database file and create item to datapoint mapping
@@ -37,29 +39,47 @@ class MetadataDBRepository:
             manifest_file: Text file listing file paths of datapoints in order
 
         Raises:
-            MetadataError: If file doesn't exist or connection fails
+            DatabaseError: If file doesn't exist or connection fails
         """
         try:
             db_path = Path(database_file)
             if not db_path.exists():
-                raise MetadataError(f"Metadata DB file not found: {database_file}")
+                raise DatabaseError(f"Database file not found: {database_file}")
             self._db_type[collection] = database
             if database == 'duckdb':
                 self._db_connection[collection] = duckdb.connect(db_path, read_only=True)
-                self._tagtype_cache[collection] = \
-                    self._db_connection[collection].execute(
-                        """
-                        SELECT id, name 
-                        FROM tagtypes
-                        """
-                    ).fetchdf().set_index('id')['name'].to_dict()
+                rows = self._db_connection[collection].execute(
+                    """
+                    SELECT id, description as name 
+                    FROM tag_types
+                    """
+                ).fetchall()
+                self._tagtype_cache[collection] = {
+                    row[0]: row[1] for row in rows
+                }
+
             
-            self._item_datapoint_mapping_cache = \
+            self._item_datapoint_mapping_cache[collection] = \
                 self.create_item_to_datapoint_mapping(collection, manifest_file)
-            
 
         except Exception as e:
-            raise MetadataError(f"Failed to load metadata from {db_path}: {e}")
+            raise DatabaseError(f"Failed to load database from {db_path}: {e}")
+    
+    def is_loaded(self, collection: str) -> bool:
+        """Check if the database for the specified collection is loaded.
+
+        Args:
+            collection: Name of the collection
+        Returns:
+            True if the database is loaded, False otherwise
+        """
+        if collection not in self._db_connection:
+            return False
+        
+        if self._db_connection[collection] is None:
+            return False
+        
+        return True
 
 
     def get_tagtypes(self, collection: str) -> Optional[Dict[int, str]]:
@@ -92,7 +112,7 @@ class MetadataDBRepository:
             return filters
         
         except Exception as e:
-            raise MetadataError(f"Failed to retrieve filters from {collection}: {e}")
+            raise DatabaseError(f"Failed to retrieve filters from {collection}: {e}")
 
 
     def get_filter_values(self, collection: str, filter_id: int, tagtype: int) -> Optional[List[Any]]:
@@ -107,7 +127,7 @@ class MetadataDBRepository:
             List of filter values or None if not found
         
         Raises:
-            MetadataError: If retrieval fails
+            DatabaseError: If retrieval fails
         """
         try:
             with self._db_connection[collection].cursor() as cursor:
@@ -132,7 +152,7 @@ class MetadataDBRepository:
                     filter_values = [row[1] for row in rows]
                 return filter_values
         except Exception as e:
-            raise MetadataError(f"Failed to retrieve filter values of {filter_id} from {collection}: {e}")
+            raise DatabaseError(f"Failed to retrieve filter values of {filter_id} from {collection}: {e}")
 
 
     def get_media_metadata(
@@ -222,7 +242,7 @@ class MetadataDBRepository:
                         related_items = [row[0] for row in rows]
                 return related_items
         except Exception as e:
-            raise MetadataError(f"Failed to retrieve related items for {item_id} from {collection}: {e}")
+            raise DatabaseError(f"Failed to retrieve related items for {item_id} from {collection}: {e}")
 
 
     def get_item(self, collection: str, item_id: int, filters=[]) -> Optional[Dict[str, Any]]:
@@ -259,7 +279,7 @@ class MetadataDBRepository:
                         item['metadata'] = self.get_media_metadata(cursor, mapped_item_id, filters)
                     self._metadata_cache[item_id] = item
             except Exception as e:
-                raise MetadataError(f"Failed to retrieve metadata for item {item_id}: {e}")
+                raise DatabaseError(f"Failed to retrieve metadata for item {item_id}: {e}")
         else:
             return self._metadata_cache[item_id]
 
@@ -283,7 +303,7 @@ class MetadataDBRepository:
                 return None
         
             except Exception as e:
-                raise MetadataError(f"Failed to retrieve group {group_id} from {collection}: {e}")
+                raise DatabaseError(f"Failed to retrieve group {group_id} from {collection}: {e}")
         else:
             return self._metadata_cache[int(group_id)]
 
@@ -303,7 +323,7 @@ class MetadataDBRepository:
             ).fetchone()[0]
             return count
         except Exception as e:
-            raise MetadataError(f"Failed to get total items for collection {collection}: {e}")
+            raise DatabaseError(f"Failed to get total items for collection {collection}: {e}")
 
 
     def create_item_to_datapoint_mapping(self, collection: str, manifest_file: str) -> Dict[str, int]:
@@ -324,26 +344,26 @@ class MetadataDBRepository:
             if self._db_type[collection] == 'duckdb':
                 rows = cursor.execute(
                     """
-                    SELECT media_id, file_uri
+                    SELECT id, file_uri
                     FROM medias
                     WHERE group_id IS NOT NULL
-                    ORDER BY media_id
-                    """).fetchall()
+                    ORDER BY id
+                    """)
                 mapping = {}
                 if Path(manifest_file).exists():
                     with open(manifest_file, 'r') as f:
                         file_paths = {}
                         for idx, line in enumerate(f):
                             file_paths[line.strip()] = idx
-                            for media_id, file_uri in rows:
-                                if file_uri in file_paths:
-                                    mapping[str(media_id)] = file_paths[file_uri]
+                        for media_id, file_uri in rows.fetchall():
+                            if file_uri in file_paths:
+                                mapping[file_paths[file_uri]] = media_id
                 else:
-                    for idx, (media_id, _) in enumerate(rows):
-                        mapping[str(media_id)] = idx    
+                    for idx, (media_id, _) in enumerate(rows.fetchall()):
+                        mapping[media_id] = idx    
                 return mapping
         except Exception as e:
-            raise MetadataError(f"Failed to create item to datapoint mapping for collection {collection}: {e}")
+            raise DatabaseError(f"Failed to create item to datapoint mapping for collection {collection}: {e}")
         metadata = self.get_metadata(collection)
         if not metadata or "items" not in metadata:
             return {}
