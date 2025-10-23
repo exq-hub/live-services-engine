@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
-from app.repositories.database_repository import MetadataDBRepository
+from app.repositories.database_repository import DatabaseRepository
 
 from ...schemas import ItemRequest, IsExcludedRequest, SessionInfo, Filter
 from ...services.item_service import ItemService
@@ -154,7 +154,7 @@ async def get_selected_filters_values(
     filter_id: str,
     tagtype: str,
     background_tasks: BackgroundTasks,
-    metadata_repo: MetadataDBRepository=Depends(get_metadata_repository),
+    metadata_repo: DatabaseRepository=Depends(get_metadata_repository),
 ) -> Dict[str, List]:
     """Get values for selected filters in a collection."""
     try:

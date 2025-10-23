@@ -15,6 +15,8 @@ class CollectionConfig(BaseModel):
 
     enabled: bool = Field(..., description="Whether this collection is enabled")
     clip_index: str = Field(..., description="Path to CLIP index file")
+    database_file: str = Field(..., description="Path to database file")
+    manifest_file: str = Field(..., description="Path to manifest file")
     metadata_file: str = Field(..., description="Path to metadata file")
     filters_file: str = Field(..., description="Path to filters file")
     related_items_file: str = Field(..., description="Path to related items file")
@@ -39,7 +41,8 @@ class CollectionConfig(BaseModel):
         "./logs/", description="Directory for log files"
     )
 
-    @validator("clip_index", "metadata_file", "filters_file", "related_items_file")
+    @validator("clip_index", "database_file", "manifest_file",
+               "metadata_file", "filters_file", "related_items_file")
     def validate_required_files(cls, v):
         if not os.path.exists(v):
             raise ValueError(f"Required file does not exist: {v}")
@@ -123,6 +126,8 @@ class ConfigManager:
                 config_dict = {
                     "enabled": True,
                     "clip_index": section["CLIPIndex"],
+                    "database_file": section["DatabaseFile"],
+                    "manifest_file": section["ManifestFile"],
                     "metadata_file": section["MetadataFile"],
                     "filters_file": section["FiltersFile"],
                     "related_items_file": section["RelatedItemsFile"],
