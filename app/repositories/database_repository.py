@@ -159,9 +159,14 @@ class DatabaseRepository:
             raise DatabaseError(f"Failed to retrieve filter values of {filter_id} from {collection}: {e}")
 
 
+    def get_media_ids(self, collection, index_ids: list[int]) -> list[int]:
+        return [self._item_datapoint_mapping_cache[collection][idx] for idx in index_ids]
+
+
     def get_media_metadata(
             self, 
             cursor: duckdb.DuckDBPyConnection,
+            collection: str,
             item_id: int, 
             filters: List[str],
             mapped: bool=False
@@ -179,9 +184,10 @@ class DatabaseRepository:
         """
 
         if not mapped:
-            media_id = self._item_datapoint_mapping_cache[cursor][item_id]
+            media_id = self._item_datapoint_mapping_cache[collection][item_id]
         else:
             media_id = item_id
+
         # Get metadata from tags
         metadata = {}
         query = """
@@ -198,9 +204,9 @@ class DatabaseRepository:
                 """
         tag_info = None
         if filters:
-            query += f""" AND ts.name IN ({','.join(['?'] * len(filters))}) 
+            query += f""" AND ts.id IN ({','.join(['?'] * len(filters))}) 
                         ORDER BY ts.id"""
-            tag_info = cursor.execute(query, [media_id, filters]).fetchdf()
+            tag_info = cursor.execute(query, [media_id] + filters).fetchdf()
         else:
             query += " ORDER BY ts.id"
             tag_info = cursor.execute(query, [media_id]).fetchdf()
@@ -232,13 +238,13 @@ class DatabaseRepository:
 
 
     def get_related_items(self, collection: str, item_id: int) -> Optional[List[int]]:
-        """Retrieve cached related items mapping for the specified collection.
+        """Retrieve related items for the specified collection.
 
         Args:
             collection: Name of the collection
 
         Returns:
-            Cached related items mapping for a specific item
+            Cached related items for a specific item
         """
         try:
             with self._db_connection[collection].cursor() as cursor:
@@ -259,7 +265,7 @@ class DatabaseRepository:
             raise DatabaseError(f"Failed to retrieve related items for {item_id} from {collection}: {e}")
 
 
-    def get_item(self, collection: str, item_id: int, filters=[]) -> Optional[Dict[str, Any]]:
+    def get_item(self, collection: str, media_id: int, filters: list[int]=[]) -> Optional[Dict[str, Any]]:
         """Retrieve a specific item's metadata by its ID.
 
         Args:
@@ -270,35 +276,41 @@ class DatabaseRepository:
         Returns:
             Item metadata dictionary or None if not found or invalid ID
         """
-        if item_id not in self._metadata_cache:
-            try:
-                mapped_item_id = self._item_datapoint_mapping_cache[collection][item_id]
-                item = {}
-                item['item_id'] = item_id
-                with self._db_connection[collection].cursor() as cursor:
-                    if self._db_type[collection] == 'duckdb':
-                        media_info = cursor.execute("""
-                                SELECT m.file_uri,
-                                       m.group_id,
-                                       m2.file_uri as group_uri
-                                FROM medias m
-                                JOIN medias m2 ON m2.id = m.group_id
-                                WHERE m.id = ?
-                                """, [mapped_item_id]).fetchone()
-                        # TODO Consider renaming fields for clarity 
-                        item['thumbnail_uri'] = media_info[0]
-                        item['group'] = media_info[1]
-                        item['media_uri'] = media_info[2]
-                        item['metadata'] = self.get_media_metadata(cursor, mapped_item_id, filters, mapped=True)
-                    self._metadata_cache[item_id] = item
-                    return item
-            except Exception as e:
-                raise DatabaseError(f"Failed to retrieve metadata for item {item_id}: {e}")
-        else:
-            return self._metadata_cache[item_id]
+        # if media_id not in self._metadata_cache:
+        try:
+            item = {}
+            item['item_id'] = media_id
+            with self._db_connection[collection].cursor() as cursor:
+                if self._db_type[collection] == 'duckdb':
+                    media_info = cursor.execute("""
+                            SELECT m.file_uri,
+                                    m.group_id,
+                                    m2.file_uri as group_uri
+                            FROM medias m
+                            JOIN medias m2 ON m2.id = m.group_id
+                            WHERE m.id = ?
+                            """, [media_id]).fetchone()
+                    # TODO Consider renaming fields for clarity 
+                    item['thumbnail_uri'] = media_info[0]
+                    item['group'] = media_info[1]
+                    item['media_uri'] = media_info[2]
+                    item['metadata'] = \
+                        self.get_media_metadata(
+                            cursor, 
+                            collection,
+                            media_id,
+                            filters,
+                            mapped=True
+                        )
+                self._metadata_cache[media_id] = item
+                return item
+        except Exception as e:
+            raise DatabaseError(f"Failed to retrieve metadata for item {media_id}: {e}")
+        # else:
+        #     return self._metadata_cache[media_id]
 
 
-    def get_group(self, collection: str, group_id: int) -> Optional[Dict[str, Any]]:
+    def get_group(self, collection: str, group_id: int, filters: list[int]=[]) -> Optional[Dict[str, Any]]:
         """Retrieve a specific group's metadata by its ID.
 
         Args:
@@ -312,7 +324,14 @@ class DatabaseRepository:
             try:
                 with self._db_connection[collection].cursor() as cursor:
                     if self._db_type[collection] == 'duckdb':
-                        group_info = self.get_media_metadata(cursor, group_id, [], mapped=True)
+                        group_info = \
+                            self.get_media_metadata(
+                                cursor, 
+                                collection, 
+                                group_id,
+                                filters,
+                                mapped=True
+                            )
                         return group_info
                 return None
         
@@ -351,7 +370,7 @@ class DatabaseRepository:
             manifest_file: Text file listing file paths of datapoints in order
 
         Returns:
-            Dictionary mapping item_id strings to integer indices
+            Dictionary mapping index ids to
         """
         try:
             cursor = self._db_connection[collection].cursor()
@@ -374,15 +393,11 @@ class DatabaseRepository:
                                 mapping[file_paths[file_uri]] = media_id
                 else:
                     for idx, (media_id, _) in enumerate(rows.fetchall()):
-                        mapping[media_id] = idx    
+                        mapping[idx] = media_id    
                 return mapping
         except Exception as e:
             raise DatabaseError(f"Failed to create item to datapoint mapping for collection {collection}: {e}")
-        metadata = self.get_metadata(collection)
-        if not metadata or "items" not in metadata:
-            return {}
 
-        return {item["item_id"]: idx for idx, item in enumerate(metadata["items"])}
 
     def clear_cache(self, collection: Optional[str] = None):
         """Clear cached data for the specified collection or all collections.

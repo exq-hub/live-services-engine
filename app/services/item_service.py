@@ -19,7 +19,7 @@ class ItemService:
     def get_item_base_info(self, request: ItemRequest) -> Dict[str, Any]:
         """Get basic information for an item."""
         collection = request.session_info.collection
-        item = self.metadata_repo.get_item(collection, request.itemId)
+        item = self.metadata_repo.get_item(collection, request.itemId, request.filter_ids)
 
         if not item:
             raise MetadataError(
@@ -55,14 +55,17 @@ class ItemService:
     def get_item_detailed_info(self, request: ItemRequest) -> Dict[str, Any]:
         """Get detailed information for an item."""
         collection = request.session_info.collection
-        item = self.metadata_repo.get_item(collection, request.itemId, request.filter_ids)
+        if isinstance(self.metadata_repo, DatabaseRepository):
+            item = self.metadata_repo.get_item(collection, request.itemId, request.filter_ids)
+            group = self.metadata_repo.get_group(collection, item["group"], request.filter_ids)
+        else:
+            item = self.metadata_repo.get_item(collection, request.itemId)
+            group = self.metadata_repo.get_group(collection, item["group"])
 
         if not item:
             raise MetadataError(
                 f"Item {request.itemId} not found in collection {collection}"
             )
-
-        group = self.metadata_repo.get_group(collection, item["group"])
 
         # Process item metadata
         info_pairs = {}
@@ -80,6 +83,9 @@ class ItemService:
     def get_related_items(self, request: ItemRequest) -> Dict[str, List[int]]:
         """Get related items for an item."""
         collection = request.session_info.collection
+        if isinstance(self.metadata_repo, DatabaseRepository):
+            related_items = self.metadata_repo.get_related_items(collection, request.itemId)
+            return {"related": related_items}
         item = self.metadata_repo.get_item(collection, request.itemId)
 
         if not item:
