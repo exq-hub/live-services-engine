@@ -92,6 +92,31 @@ async def get_filters(
 
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
+@router.get("/info/filters/values/{session}/{collection}/{tagtype_id}/{filter_id}")
+async def get_filter_values(
+    session: str,
+    collection: str,
+    filter_name: str,
+    background_tasks: BackgroundTasks,
+    metadata_repo: MetadataRepository | DatabaseRepository=Depends(get_metadata_repository),
+) -> Dict[str, Any]:
+    """Get possible values for a specific filter in a collection."""
+    try:
+        filter_values = metadata_repo.get_filter_values(collection, filter_name)
+        # Log the request
+        background_tasks.add_task(
+            _log_filters_values_request,
+            session=session,
+            collection=collection,
+            filter_values=filter_values,
+        )
+        return {"filter_name": filter_name, "values": filter_values}
+
+    except Exception as e:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
 
 @router.post("/log/addModel")
 async def log_add_model(
@@ -261,7 +286,7 @@ async def _log_total_items_request(session: str, collection: str, total_items: i
     dump_log_msgpack(log_message, "./logs/admin.log")
 
 
-async def _log_filters_request(session: str, collection: str, total_items: int):
+async def _log_filters_request(session: str, collection: str, filters: list[Dict[str, Any]]):
     """Background task to log total items request."""
     from ...utils import dump_log_msgpack, get_current_timestamp
 
@@ -271,7 +296,24 @@ async def _log_filters_request(session: str, collection: str, total_items: int):
         "data": {
             "session": session,
             "collection": collection,
-            "total_items": total_items,
+            "filters": filters,
+        },
+    }
+
+    dump_log_msgpack(log_message, "./logs/admin.log")
+
+
+async def _log_filters_values_request(session: str, collection: str, filter_values: list[Dict[str, Any]]):
+    """Background task to log total items request."""
+    from ...utils import dump_log_msgpack, get_current_timestamp
+
+    log_message = {
+        "timestamp": get_current_timestamp(),
+        "action": "Get filter definitions for collection request",
+        "data": {
+            "session": session,
+            "collection": collection,
+            "filter_values": filter_values,
         },
     }
 
