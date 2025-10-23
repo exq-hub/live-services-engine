@@ -7,7 +7,7 @@ import torch
 import numpy as np
 
 from .base import TextSearchStrategy
-from ..schemas import ActiveFilters
+from ..schemas import ActiveFilters, ActiveFiltersDB
 from ..search_utils import check_active_filters
 from ..core.exceptions import SearchError
 
@@ -30,7 +30,7 @@ class CLIPSearchStrategy(TextSearchStrategy):
         n: int,
         seen: List[int],
         excluded: List[int],
-        filters: Optional[ActiveFilters] = None,
+        filters: Optional[ActiveFilters | ActiveFiltersDB] = None,
     ) -> List[int]:
         """Execute CLIP text search."""
         try:
@@ -105,13 +105,18 @@ class CLIPSearchStrategy(TextSearchStrategy):
         n: int,
         seen_set: set,
         excluded_set: set,
-        filters: Optional[ActiveFilters],
+        filters: Optional[ActiveFilters | ActiveFiltersDB] = None,
     ) -> List[int]:
         """Search with expanding radius until sufficient results."""
         active_n = n
         total_items = self.metadata_repo.get_total_items(collection)
-        metadata = self.metadata_repo.get_metadata(collection)
-        collection_filters = self.metadata_repo.get_filters(collection)
+        if isinstance(self.metadata_repo, DatabaseRepository):
+            passed_ids = self.metadata_repo.get_filtered_item_ids(
+                collection, filters
+            )
+        else:
+            metadata = self.metadata_repo.get_metadata(collection)
+            collection_filters = self.metadata_repo.get_filters(collection)
 
         while True:
             last = active_n >= total_items
@@ -125,8 +130,12 @@ class CLIPSearchStrategy(TextSearchStrategy):
             suggestions = []
             for idx in indices[0].tolist():
                 if idx not in seen_set and idx not in excluded_set:
-                    if filters is None or check_active_filters(
-                        metadata["items"][idx], filters, collection_filters
+                    if (
+                        filters is None
+                        or (isinstance(self.metadata_repo, DatabaseRepository) and idx in passed_ids)
+                        or (isinstance(self.metadata_repo, MetadataRepository)
+                            and check_active_filters(metadata["items"][idx], filters, collection_filters)
+                        )
                     ):
                         suggestions.append(idx)
 
