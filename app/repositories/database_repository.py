@@ -106,16 +106,22 @@ class DatabaseRepository:
             filters = {}
             with self._db_connection[collection].cursor() as cursor:
                 if self._db_type[collection] == 'duckdb':
-                    rows = cursor.execute("SELECT * FROM tagset").fetchall()
+                    rows = cursor.execute(
+                        """
+                        SELECT ts.id, ts.name, tt.id as tagtype_id, tt.description as tagtype"
+                        FROM tagset ts 
+                        JOIN tag_types tt ON ts.tagtype_id = tt.id
+                        """
+                        ).fetchall()
                     columns = [col[0] for col in cursor.description]
-                    filters = dict(zip(columns,rows))
+                    filters = [dict(zip(columns,row)) for row in rows]
             return filters
         
         except Exception as e:
             raise DatabaseError(f"Failed to retrieve filters from {collection}: {e}")
 
 
-    def get_filter_values(self, collection: str, filter_id: int, tagtype: int) -> Optional[List[Any]]:
+    def get_filter_values(self, collection: str, filter_id: int, tagtype_id: int) -> Optional[List[Any]]:
         """Retrieve values for a specific filter by its ID and tagtype
         
         Args:
@@ -132,24 +138,22 @@ class DatabaseRepository:
         try:
             with self._db_connection[collection].cursor() as cursor:
                 if self._db_type[collection] == 'duckdb':
-                    tagtype_id = None
-                    for id, name in self._tagtype_cache[collection].items():
-                        if name == tagtype:
-                            tagtype_id = id
-                            break
-                    if tagtype_id is None:
-                        raise MetadataError(f"Tagtype {tagtype} not found in collection {collection}")
+                    if tagtype_id not in self._tagtype_cache[collection]:
+                        raise DatabaseError(
+                            f"Tagtype with id {tagtype_id} not found in collection {collection}: {e}"
+                        )
                     
                     rows = cursor.execute(
-                        """
+                        f"""
                         SELECT t.id, t.name 
-                        FROM tags t
+                        FROM {self._tagtype_cache[collection][tagtype_id]}_tags t
                         JOIN tagsets ts ON t.tagset_id = ts.id
                         WHERE ts.tagtype_id = ? AND ts.id = ?
                         """,
                         [tagtype_id, filter_id]
                     ).fetchall()
-                    filter_values = [row[1] for row in rows]
+                    columns = [col[0] for col in cursor.description]
+                    filter_values = [dict(zip(columns,row)) for row in rows]
                 return filter_values
         except Exception as e:
             raise DatabaseError(f"Failed to retrieve filter values of {filter_id} from {collection}: {e}")
