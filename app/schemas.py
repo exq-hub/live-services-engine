@@ -84,7 +84,21 @@ class ActiveFilters(BaseModel):
         treat_values_as_and: Optional list of filter names to treat with AND logic
     """
 
-    names: list[str]
+    name: list[str]
+    values: list[list[int]]
+    treat_values_as_and: Optional[list[str]] = []
+
+
+class ActiveFiltersDB(BaseModel):
+    """Model for managing multiple active filters in search operations.
+
+    Attributes:
+        names: List of filter names that are currently active
+        values: List of lists containing integer values for each filter
+        treat_values_as_and: Optional list of filter names to treat with AND logic
+    """
+
+    ids: list[int]
     values: list[list[int]]
     treat_values_as_and: Optional[list[str]] = []
 
