@@ -1,0 +1,138 @@
+from typing import Any, Dict, List, Tuple, Union, Optional
+
+from app.schemas import ActiveFiltersDB, DBRangeConstraint, DBValueConstraint, FilterExpr, FilterGroup, FilterLeaf
+
+def placeholders(n: int) -> str:
+    return ",".join("?" for _ in range(n))
+
+def compile_active_filters(active: ActiveFiltersDB, tagtype_map: Dict[int, str]) -> Tuple[str, List[Any]]:
+    """
+    active: ActiveFiltersDB as a dict (pydantic .model_dump()) with shape:
+      {"root": FilterExpr}
+    Returns (sql, params).
+    """
+    params: List[Any] = []
+
+    def emit_value_any(tag_ids: List[int], negated: bool) -> Tuple[str, List[Any]]:
+        if not tag_ids:
+            # ANY with empty list: normally false; negated => true
+            return ("1=1" if negated else "0=1", [])
+        ph = placeholders(len(tag_ids))
+        expr = f"SUM(CASE WHEN tgs.tag_id IN ({ph}) THEN 1 ELSE 0 END) {'=' if negated else '>'} 0"
+        return expr, tag_ids
+
+    def emit_value_all(tag_ids: List[int], negated: bool) -> Tuple[str, List[Any]]:
+        if not tag_ids:
+            # ALL with empty list: vacuously true; negated => false
+            return ("0=1" if negated else "1=1", [])
+        ph = placeholders(len(tag_ids))
+        needed = len(tag_ids)
+        op = "<" if negated else "="
+        expr = (
+            f"COUNT(DISTINCT CASE WHEN tgs.tag_id IN ({ph}) THEN tgs.tag_id END) {op} {needed}"
+        )
+        return expr, tag_ids
+
+    def emit_range_exists(
+        filter_id: int, # tagset_id
+        tagtype_id: int,
+        lower: Optional[Union[int, float, str]],
+        upper: Optional[Union[int, float, str]],
+        negated: bool,
+    ) -> Tuple[str, List[Any]]:
+        where_parts = [f"r.tagset_id = ?"]
+        p: List[Any] = [filter_id]
+
+        # Build the bound predicates. BETWEEN if both present, otherwise one-sided.
+        if lower is not None and upper is not None:
+            where_parts.append(f"r.name BETWEEN ? AND ?")
+            p.extend([lower, upper])
+        elif lower is not None:
+            where_parts.append(f"r.name >= ?")
+            p.append(lower)
+        elif upper is not None:
+            where_parts.append(f"r.name <= ?")
+            p.append(upper)
+        else:
+            # No bounds means "any value in this set"; keep just the set_id check.
+            pass
+
+        sub = (
+            f"EXISTS ("
+            f"  SELECT 1"
+            f"  FROM taggings x"
+            f"  JOIN {tagtype_map[tagtype_id]}_tags r ON r.id = x.tag_id"
+            f"  WHERE x.media_id = tgs.media_id AND " + " AND ".join(where_parts) +
+            f")"
+        )
+        if negated:
+            sub = f"NOT ({sub})"
+        return sub, p
+
+    def compile_leaf(leaf: FilterLeaf) -> Tuple[str, List[Any]]:
+        f = leaf.filter
+        fid = f.id
+        tagtype = f.tagtype_id
+        constraint = f.constraint
+        neg = leaf.not_
+
+        # Value constraint?
+        if isinstance(constraint, DBValueConstraint):
+            ids = constraint.value_ids
+            op = constraint.operator
+            if op == "OR":
+                return emit_value_any(ids, neg)
+            elif op == "AND":
+                return emit_value_all(ids, neg)
+            else:
+                raise ValueError(f"Unknown value operator: {op}")
+
+        # Range constraint?
+        if isinstance(constraint, DBRangeConstraint):
+            return emit_range_exists(fid, tagtype, constraint.lower_bound, 
+                                     constraint.upper_bound, neg)
+
+        raise ValueError("Unrecognized constraint shape")
+
+    def compile_group(group: FilterGroup) -> Tuple[str, List[Any]]:
+        op = group.operator  # "AND" | "OR"
+        neg = group.not_
+        child_sqls: List[str] = []
+        child_params: List[Any] = []
+
+        for child in group.children:
+            sql_i, params_i = compile_expr(child)
+            # Skip tautologies/contradictions if you like; simplest is to keep all.
+            child_sqls.append(f"({sql_i})")
+            child_params.extend(params_i)
+
+        if not child_sqls:
+            # No children: identity element (AND -> TRUE, OR -> FALSE)
+            base = "1=1" if op == "AND" else "0=1"
+        else:
+            joiner = f" {op} "
+            base = joiner.join(child_sqls)
+
+        if neg:
+            base = f"NOT ({base})"
+        return base, child_params
+
+    def compile_expr(node: FilterExpr) -> Tuple[str, List[Any]]:
+        if node.kind == "leaf":
+            return compile_leaf(node)
+        elif node.kind == "group":
+            return compile_group(node)
+        else:
+            raise ValueError(f"Unknown node kind: {node}")
+
+    # --- build final SQL ---
+    expr_sql, expr_params = compile_expr(active.root)
+    params.extend(expr_params)
+
+    sql = (
+        "SELECT tgs.media_id\n"
+        "FROM taggings AS tgs\n"
+        "GROUP BY tgs.media_id\n"
+        f"HAVING {expr_sql}"
+    )
+    return sql, params

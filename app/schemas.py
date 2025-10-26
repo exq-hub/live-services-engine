@@ -5,9 +5,9 @@ in the Live Services Engine, including search requests, session management,
 filtering, and item information structures.
 """
 
-from typing import List, Optional, Union, Tuple
-from pydantic import BaseModel
-
+from __future__ import annotations
+from typing import List, Literal, Optional, Union, Tuple
+from pydantic import BaseModel, Field
 
 class AddOrRemoveModelRequest(BaseModel):
     """Request model for adding or removing a model from a session.
@@ -89,18 +89,37 @@ class ActiveFilters(BaseModel):
     treat_values_as_and: Optional[list[str]] = []
 
 
+class DBValueConstraint(BaseModel):
+    value_ids: list[int]
+    operator: Literal["AND", "OR"] = "OR"
+
+class DBRangeConstraint(BaseModel):
+    upper_bound: int | float | str
+    lower_bound: int | float | str
+
+class DBFilter(BaseModel):
+    id: int
+    tagtype_id: int
+    constraint: DBValueConstraint | DBRangeConstraint
+
+class FilterGroup(BaseModel):
+    """A group of filters combined with a logical operator."""
+    kind: Literal["group"] = "group"
+    operator: Literal["AND", "OR"]
+    children: list[FilterExpr] = Field(default_factory=list)
+    not_: bool = False
+
+class FilterLeaf(BaseModel):
+    """A single filter condition."""
+    kind: Literal["leaf"] = "leaf"
+    filter: DBFilter
+    not_: bool = False
+
+FilterExpr = Union[FilterLeaf, FilterGroup]
+
 class ActiveFiltersDB(BaseModel):
-    """Model for managing multiple active filters in search operations.
-
-    Attributes:
-        names: List of filter names that are currently active
-        values: List of lists containing integer values for each filter
-        treat_values_as_and: Optional list of filter names to treat with AND logic
-    """
-
-    ids: list[int]
-    values: list[list[int]]
-    treat_values_as_and: Optional[list[str]] = []
+    """Model for managing multiple active filters in search operations."""
+    root: FilterExpr
 
 
 class RFSearchRequest(BaseModel):
@@ -122,7 +141,7 @@ class RFSearchRequest(BaseModel):
     n: int
     seen: list[int]
     query: Optional[str] = None
-    filters: Optional[ActiveFilters] = None
+    filters: Optional[ActiveFilters | ActiveFiltersDB] = None
     excluded: list[int]
     session_info: SessionInfo
 
@@ -142,7 +161,7 @@ class TextSearchRequest(BaseModel):
     text: str
     n: int
     seen: Optional[list[int]] = []
-    filters: Optional[ActiveFilters] = None
+    filters: Optional[ActiveFilters | ActiveFiltersDB] = None
     excluded: Optional[list[int]] = []
     session_info: SessionInfo
 
@@ -163,7 +182,7 @@ class AggregationSearchRequest(BaseModel):
     texts: list[str]
     n: int
     seen: Optional[list[int]] = []
-    filters: Optional[ActiveFilters] = None
+    filters: Optional[ActiveFilters | ActiveFiltersDB] = None
     excluded: Optional[list[int]] = []
     session_info: SessionInfo
     RF: Optional[Tuple[list[int], list[int]]] = None
