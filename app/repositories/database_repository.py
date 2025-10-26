@@ -2,6 +2,7 @@ import duckdb
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from app.repositories import db_helper
 from app.schemas import ActiveFiltersDB
 
 from ..core.exceptions import DatabaseError
@@ -57,7 +58,6 @@ class DatabaseRepository:
                 self._tagtype_cache[collection] = {
                     row[0]: row[1] for row in rows
                 }
-
             
             self._item_datapoint_mapping_cache[collection] = \
                 self.create_item_to_datapoint_mapping(collection, manifest_file)
@@ -357,6 +357,24 @@ class DatabaseRepository:
             return count
         except Exception as e:
             raise DatabaseError(f"Failed to get total items for collection {collection}: {e}")
+
+
+    def get_filtered_media_ids(self, collection: str, filters: ActiveFiltersDB) -> set:
+        """Retrieve item IDs that pass the specified active filters.
+        
+        Args:
+            collection: Name of the collection
+            filters: ActiveFiltersDB object specifying filter criteria
+        Returns:
+            Set of item IDs that pass the filters
+        """
+        try:
+            query, params = db_helper.compile_active_filters(active=filters, tagtype_map=self._tagtype_cache[collection])
+            with self._db_connection[collection].cursor() as cursor:
+                passed_ids = [r[0] for r in cursor.execute(query, params).fetchall()]
+                return passed_ids
+        except Exception as e:
+            raise DatabaseError(f"Failed to retrieve filtered item IDs from {collection}: {e}")
 
 
     def create_item_to_datapoint_mapping(self, collection: str, manifest_file: str) -> Dict[str, int]:
