@@ -141,9 +141,9 @@ class CLIPSearchStrategy(TextSearchStrategy):
                     if (
                         filters is None
                         or (isinstance(self.metadata_repo, DatabaseRepository) and idx in passed_ids)
-                        # or (isinstance(self.metadata_repo, MetadataRepository)
-                        #     and check_active_filters(metadata["items"][idx], filters, collection_filters)
-                        # )
+                        or (isinstance(self.metadata_repo, MetadataRepository)
+                            and check_active_filters(metadata["items"][idx], filters, collection_filters)
+                        )
                     ):
                         suggestions.append(idx)
 
