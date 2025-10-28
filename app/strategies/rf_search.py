@@ -6,6 +6,9 @@ import numpy as np
 from sklearn.linear_model import SGDClassifier
 from numpy.random import default_rng
 
+from app.repositories.database_repository import DatabaseRepository
+from app.repositories.metadata_repository import MetadataRepository
+
 from .base import RFSearchStrategy
 from .clip_search import CLIPSearchStrategy
 from ..schemas import ActiveFilters
@@ -161,8 +164,15 @@ class RFSearchStrategy(RFSearchStrategy):
         """Search with expanding radius until sufficient results."""
         active_n = n
         total_items = self.metadata_repo.get_total_items(collection)
-        metadata = self.metadata_repo.get_metadata(collection)
-        collection_filters = self.metadata_repo.get_filters(collection)
+        if filters and isinstance(self.metadata_repo, DatabaseRepository):
+            passed_ids = []
+            passed_ids = self.metadata_repo.get_filtered_media_ids(
+                collection, filters
+            )
+        elif isinstance(self.metadata_repo, MetadataRepository):
+            metadata = self.metadata_repo.get_metadata(collection)
+            collection_filters = self.metadata_repo.get_filters(collection)
+
 
         while True:
             last = active_n >= total_items
@@ -170,12 +180,20 @@ class RFSearchStrategy(RFSearchStrategy):
             # Search using hyperplane
             _, indices = self.index_repo.search_clip(collection, hyperplane, active_n)
 
+            indices = indices[0].tolist()
+            if isinstance(self.metadata_repo, DatabaseRepository):
+                indices = self.metadata_repo.get_media_ids(collection, indices)
+
             # Filter results
             suggestions = []
             for idx in indices[0].tolist():
                 if idx not in seen_set and idx not in excluded_set:
-                    if filters is None or check_active_filters(
-                        metadata["items"][idx], filters, collection_filters
+                    if (
+                        filters is None
+                        or (isinstance(self.metadata_repo, DatabaseRepository) and idx in passed_ids)
+                        or (isinstance(self.metadata_repo, MetadataRepository)
+                            and check_active_filters(metadata["items"][idx], filters, collection_filters)
+                        )
                     ):
                         suggestions.append(idx)
 
