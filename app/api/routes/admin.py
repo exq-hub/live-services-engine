@@ -67,21 +67,22 @@ async def get_total_items(
 
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-@router.post("/info/filters")
+@router.get("/info/filters/{session}/{collection}")
 async def get_filters(
-    request: SessionInfo,
+    session: str,
+    collection: str,
     background_tasks: BackgroundTasks,
     metadata_repo: MetadataRepository | DatabaseRepository=Depends(get_metadata_repository),
 ) -> Dict[str, Any]:
     """Get available filter definitions for a collection"""
     try:
-        filters = metadata_repo.get_filters(request.collection) or {}
+        filters = metadata_repo.get_filters(collection) or {}
 
         # Log the request
         background_tasks.add_task(
             _log_filters_request,
-            session=request.session,
-            collection=request.collection,
+            session=session,
+            collection=collection,
             filters=filters,
         )
 
@@ -96,13 +97,14 @@ async def get_filters(
 async def get_filter_values(
     session: str,
     collection: str,
-    filter_name: str,
+    tagtype_id: int,
+    filter_id: int,
     background_tasks: BackgroundTasks,
     metadata_repo: MetadataRepository | DatabaseRepository=Depends(get_metadata_repository),
 ) -> Dict[str, Any]:
     """Get possible values for a specific filter in a collection."""
     try:
-        filter_values = metadata_repo.get_filter_values(collection, filter_name)
+        filter_values = metadata_repo.get_filter_values(collection, filter_id, tagtype_id)
         # Log the request
         background_tasks.add_task(
             _log_filters_values_request,
@@ -110,7 +112,7 @@ async def get_filter_values(
             collection=collection,
             filter_values=filter_values,
         )
-        return {"filter_name": filter_name, "values": filter_values}
+        return {"filter_values": filter_values}
 
     except Exception as e:
         from fastapi import HTTPException
