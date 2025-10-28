@@ -130,21 +130,23 @@ class CLIPSearchStrategy(TextSearchStrategy):
                 collection, text_features, active_n
             )
 
+            indices = indices[0].tolist()
+            if isinstance(self.metadata_repo, DatabaseRepository):
+                indices = self.metadata_repo.get_media_ids(collection, indices)
+            
             # Filter results
             suggestions = []
-            for idx in indices[0].tolist():
+            for idx in indices:
                 if idx not in seen_set and idx not in excluded_set:
                     if (
                         filters is None
                         or (isinstance(self.metadata_repo, DatabaseRepository) and idx in passed_ids)
-                        or (isinstance(self.metadata_repo, MetadataRepository)
-                            and check_active_filters(metadata["items"][idx], filters, collection_filters)
-                        )
+                        # or (isinstance(self.metadata_repo, MetadataRepository)
+                        #     and check_active_filters(metadata["items"][idx], filters, collection_filters)
+                        # )
                     ):
                         suggestions.append(idx)
 
-            if isinstance(self.metadata_repo, DatabaseRepository):
-                suggestions = self.metadata_repo.get_media_ids(collection, suggestions)
             # Check if we have enough results
             if len(suggestions) >= n:
                 return suggestions[:n]
