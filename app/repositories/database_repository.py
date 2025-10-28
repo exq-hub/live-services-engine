@@ -108,8 +108,8 @@ class DatabaseRepository:
                 if self._db_type[collection] == 'duckdb':
                     rows = cursor.execute(
                         """
-                        SELECT ts.id, ts.name, tt.id as tagtype_id, tt.description as tagtype"
-                        FROM tagset ts 
+                        SELECT ts.id, ts.name, tt.id as tagtype_id, tt.description as tagtype
+                        FROM tagsets ts 
                         JOIN tag_types tt ON ts.tagtype_id = tt.id
                         """
                         ).fetchall()
