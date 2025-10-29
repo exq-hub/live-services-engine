@@ -112,6 +112,7 @@ class CaptionSearchStrategy(TextSearchStrategy):
         #     collection
         # )
 
+        suggestions = []
         while True:
             last = active_n >= total_items
 
@@ -122,7 +123,7 @@ class CaptionSearchStrategy(TextSearchStrategy):
 
             mapped_indices = indices[0].tolist()
             if isinstance(self.metadata_repo, DatabaseRepository):
-                indices = self.metadata_repo.get_media_ids(collection, indices)
+                mapped_indices = self.metadata_repo.get_media_ids(collection, mapped_indices, index='caption')
             
             # Map caption indices to shot indices
             # caption_ids = [caption_shot_ids_list[idx] for idx in indices[0].tolist()]
@@ -130,7 +131,6 @@ class CaptionSearchStrategy(TextSearchStrategy):
             # mapped_indices = [item_to_datapoint[shot] for shot in base_shots]
 
             # Filter results
-            suggestions = []
             for idx in mapped_indices:
                 if idx not in seen_set and idx not in excluded_set:
                     if (
