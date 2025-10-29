@@ -48,6 +48,10 @@ class RFSearchStrategy(RFSearchStrategy):
             emb_arr = self.index_repo.get_embeddings_array(collection)
             total_items = self.metadata_repo.get_total_items(collection)
 
+            if isinstance(self.metadata_repo, DatabaseRepository):
+                pos = self.metadata_repo.get_index_ids(collection, pos)
+                neg = self.metadata_repo.get_index_ids(collection, neg)
+
             # Prepare positive samples
             pos_samples = await self._prepare_positive_samples(
                 collection, pos, query, seen, excluded, filters
@@ -174,6 +178,7 @@ class RFSearchStrategy(RFSearchStrategy):
             collection_filters = self.metadata_repo.get_filters(collection)
 
 
+        suggestions = []
         while True:
             last = active_n >= total_items
 
@@ -182,10 +187,9 @@ class RFSearchStrategy(RFSearchStrategy):
 
             mapped_indices = indices[0].tolist()
             if isinstance(self.metadata_repo, DatabaseRepository):
-                indices = self.metadata_repo.get_media_ids(collection, indices)
+                mapped_indices = self.metadata_repo.get_media_ids(collection, mapped_indices)
 
             # Filter results
-            suggestions = []
             for idx in mapped_indices:
                 if idx not in seen_set and idx not in excluded_set:
                     if (

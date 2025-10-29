@@ -122,6 +122,7 @@ class CLIPSearchStrategy(TextSearchStrategy):
             metadata = self.metadata_repo.get_metadata(collection)
             collection_filters = self.metadata_repo.get_filters(collection)
 
+        suggestions = []
         while True:
             last = active_n >= total_items
 
@@ -129,13 +130,11 @@ class CLIPSearchStrategy(TextSearchStrategy):
             _, indices = self.index_repo.search_clip(
                 collection, text_features, active_n
             )
-
             mapped_indices = indices[0].tolist()
             if isinstance(self.metadata_repo, DatabaseRepository):
-                indices = self.metadata_repo.get_media_ids(collection, indices)
+                mapped_indices = self.metadata_repo.get_media_ids(collection, mapped_indices)
             
             # Filter results
-            suggestions = []
             for idx in mapped_indices:
                 if idx not in seen_set and idx not in excluded_set:
                     if (
