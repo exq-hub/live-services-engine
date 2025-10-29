@@ -2,6 +2,8 @@ import duckdb
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from pydantic import FilePath
+
 from app.repositories import db_helper
 from app.schemas import ActiveFiltersDB
 
@@ -440,6 +442,7 @@ class DatabaseRepository:
                         for media_id, file_uri in rows.fetchall():
                             if file_uri in file_paths:
                                 mapping[file_paths[file_uri]] = media_id
+                                rev_mapping[media_id] = file_paths[file_uri]
                 else:
                     for idx, (media_id, _) in enumerate(rows.fetchall()):
                         mapping[idx] = media_id    

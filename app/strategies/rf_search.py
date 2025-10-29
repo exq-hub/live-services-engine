@@ -48,17 +48,13 @@ class RFSearchStrategy(RFSearchStrategy):
             emb_arr = self.index_repo.get_embeddings_array(collection)
             total_items = self.metadata_repo.get_total_items(collection)
 
-            if isinstance(self.metadata_repo, DatabaseRepository):
-                pos = self.metadata_repo.get_index_ids(collection, pos)
-                neg = self.metadata_repo.get_index_ids(collection, neg)
-
             # Prepare positive samples
             pos_samples = await self._prepare_positive_samples(
                 collection, pos, query, seen, excluded, filters
             )
 
             # Prepare negative samples
-            neg_samples = self._prepare_negative_samples(neg, total_items)
+            neg_samples = self._prepare_negative_samples(collection, neg, total_items)
 
             # Train SVM classifier
             if len(pos_samples) == 0:
@@ -128,15 +124,27 @@ class RFSearchStrategy(RFSearchStrategy):
             total_items = self.metadata_repo.get_total_items(collection)
             positive_samples = rng.choice(total_items, size=5, replace=False).tolist()
 
+        if isinstance(self.metadata_repo, DatabaseRepository):
+            positive_samples = self.metadata_repo.get_index_ids(collection, positive_samples)
+
         return np.asarray(positive_samples)
 
-    def _prepare_negative_samples(self, neg: List[int], total_items: int) -> np.ndarray:
+    def _prepare_negative_samples(self, collection, neg: List[int], total_items: int) -> np.ndarray:
         """Prepare negative samples."""
         if neg:
+
+            if isinstance(self.metadata_repo, DatabaseRepository):
+                neg = self.metadata_repo.get_index_ids(collection, neg)
             return np.asarray(neg)
         else:
             # Add random negative samples if none provided
             rng = default_rng()
+            if isinstance(self.metadata_repo, DatabaseRepository):
+                neg = self.metadata_repo.get_index_ids(
+                    collection,
+                    rng.choice(total_items, size=5, replace=False).tolist()
+                )
+                return np.asarray(neg)
             return rng.choice(total_items, size=5, replace=False)
 
     def _build_excluded_set(self, collection: str, excluded: List[int]) -> set:
