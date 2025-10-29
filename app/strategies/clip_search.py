@@ -122,7 +122,6 @@ class CLIPSearchStrategy(TextSearchStrategy):
             metadata = self.metadata_repo.get_metadata(collection)
             collection_filters = self.metadata_repo.get_filters(collection)
 
-        suggestions = []
         while True:
             last = active_n >= total_items
 
@@ -135,6 +134,7 @@ class CLIPSearchStrategy(TextSearchStrategy):
                 mapped_indices = self.metadata_repo.get_media_ids(collection, mapped_indices)
             
             # Filter results
+            suggestions = []
             for idx in mapped_indices:
                 if idx not in seen_set and idx not in excluded_set:
                     if (
@@ -148,6 +148,7 @@ class CLIPSearchStrategy(TextSearchStrategy):
 
             # Check if we have enough results
             if len(suggestions) >= n:
+                print(suggestions)
                 return suggestions[:n]
             elif last:
                 return suggestions
