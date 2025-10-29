@@ -185,13 +185,13 @@ class DatabaseRepository:
     def get_media_ids(self, collection, index_ids: list[int], index='clip') -> list[int]:
         return [
             self._item_datapoint_mapping_cache[collection][index][idx]
-            for idx in index_ids
+            for idx in index_ids if idx != -1
         ]
     
     def get_index_ids(self, collection, index_ids: list[int], index='clip') -> list[int]:
         return [
             self._rev_item_datapoint_mapping_cache[collection][index][idx]
-            for idx in index_ids
+            for idx in index_ids if idx != -1
         ]
 
 
