@@ -15,8 +15,8 @@ class CollectionConfig(BaseModel):
 
     enabled: bool = Field(..., description="Whether this collection is enabled")
     clip_index: str = Field(..., description="Path to CLIP index file")
+    clip_manifest_file: str = Field(..., description="Path to CLIP manifest file")
     database_file: str = Field(..., description="Path to database file")
-    manifest_file: str = Field(..., description="Path to manifest file")
     metadata_file: str = Field(..., description="Path to metadata file")
     filters_file: str = Field(..., description="Path to filters file")
     related_items_file: str = Field(..., description="Path to related items file")
@@ -25,6 +25,7 @@ class CollectionConfig(BaseModel):
 
     # Optional fields
     caption_index: Optional[str] = Field(None, description="Path to caption index file")
+    caption_manifest_file: str = Field(..., description="Path to caption manifest file")
     caption_shot_mapping_file: Optional[str] = Field(
         None, description="Path to caption shot mapping"
     )
@@ -41,7 +42,7 @@ class CollectionConfig(BaseModel):
         "./logs/", description="Directory for log files"
     )
 
-    @validator("clip_index", "database_file", "manifest_file",
+    @validator("clip_index", "database_file", "clip_manifest_file",
                "metadata_file", "filters_file", "related_items_file")
     def validate_required_files(cls, v):
         if not os.path.exists(v):
@@ -126,8 +127,8 @@ class ConfigManager:
                 config_dict = {
                     "enabled": True,
                     "clip_index": section["CLIPIndex"],
+                    "clip_manifest_file": section["CLIPManifestFile"],
                     "database_file": section["DatabaseFile"],
-                    "manifest_file": section["ManifestFile"],
                     "metadata_file": section["MetadataFile"],
                     "filters_file": section["FiltersFile"],
                     "related_items_file": section["RelatedItemsFile"],
@@ -138,6 +139,7 @@ class ConfigManager:
                 # Add optional fields
                 optional_mappings = {
                     "CaptionIndex": "caption_index",
+                    "CaptionManifestFile": "caption_manifest_file",
                     "CaptionShotMappingFile": "caption_shot_mapping_file",
                     "SegmentDuration": "segment_duration",
                     "PCAModel": "pca_model",

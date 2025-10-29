@@ -18,16 +18,15 @@ class DatabaseRepository:
         """Initialize the metadata repository with empty caches."""
         self._db_connection: Dict[str, duckdb.DuckDBPyConnection] = {}
         self._db_type: Dict[str, str] = {}
-        self._metadata_cache: Dict[str, Dict] = {}
-        self._filters_cache: Dict[str, Dict] = {}
-        self._item_datapoint_mapping_cache: Dict[str, Dict[str, int]] = {}
+        self._item_datapoint_mapping_cache: Dict[str, Dict[int, int]] = {}
+        self._rev_item_datapoint_mapping_cache: Dict[str, Dict[int, int]] = {}
         self._tagtype_cache: Dict[str, Dict[int, str]] = {}
 
     def load_database(
-            self, collection: str,
-            database_file: str,
-            manifest_file: str='',
-            database: str='duckdb',
+        self,
+        collection: str,
+        database_file: str,
+        database: str='duckdb',
     ) -> None:
         """
         Open connection to the database file and create item to datapoint mapping
@@ -58,12 +57,31 @@ class DatabaseRepository:
                 self._tagtype_cache[collection] = {
                     row[0]: row[1] for row in rows
                 }
-            
-            self._item_datapoint_mapping_cache[collection] = \
-                self.create_item_to_datapoint_mapping(collection, manifest_file)
-
+            self._item_datapoint_mapping_cache[collection] = {}
+            self._rev_item_datapoint_mapping_cache[collection] = {}
         except Exception as e:
             raise DatabaseError(f"Failed to load database from {db_path}: {e}")
+
+
+    def map_manifest_to_db(
+        self,
+        collection: str,
+        manifest_file: str,
+        index: str='clip'
+    ) -> None:
+        try:
+            if index == 'clip':
+                file_type = 1 
+            elif index == 'caption':
+                file_type = 4
+            (
+                self._item_datapoint_mapping_cache[collection][index],
+                self._rev_item_datapoint_mapping_cache[collection][index]
+            ) = \
+                self.create_item_to_datapoint_mapping(collection, manifest_file, file_type)
+        except Exception as e:
+            raise DatabaseError(f"Failed to map manifest {manifest_file}: {e}")
+
     
     def is_loaded(self, collection: str) -> bool:
         """Check if the database for the specified collection is loaded.
@@ -121,7 +139,12 @@ class DatabaseRepository:
             raise DatabaseError(f"Failed to retrieve filters from {collection}: {e}")
 
 
-    def get_filter_values(self, collection: str, filter_id: int, tagtype_id: int) -> Optional[List[Any]]:
+    def get_filter_values(
+        self, 
+        collection: str, 
+        filter_id: int, 
+        tagtype_id: int
+    ) -> Optional[List[Any]]:
         """Retrieve values for a specific filter by its ID and tagtype
         
         Args:
@@ -159,17 +182,25 @@ class DatabaseRepository:
             raise DatabaseError(f"Failed to retrieve filter values of {filter_id} from {collection}: {e}")
 
 
-    def get_media_ids(self, collection, index_ids: list[int]) -> list[int]:
-        return [self._item_datapoint_mapping_cache[collection][idx] for idx in index_ids]
+    def get_media_ids(self, collection, index_ids: list[int], index='clip') -> list[int]:
+        return [
+            self._item_datapoint_mapping_cache[collection][index][idx]
+            for idx in index_ids
+        ]
+    
+    def get_index_ids(self, collection, index_ids: list[int], index='clip') -> list[int]:
+        return [
+            self._rev_item_datapoint_mapping_cache[collection][index][idx]
+            for idx in index_ids
+        ]
 
 
     def get_media_metadata(
-            self, 
-            cursor: duckdb.DuckDBPyConnection,
-            collection: str,
-            item_id: int, 
-            filters: List[str],
-            mapped: bool=False
+        self, 
+        cursor: duckdb.DuckDBPyConnection,
+        media_id: int, 
+        filters: List[str]=[],
+        index: str='clip'
     ) -> Dict[str, Any]:
         """Retrieve metadata for a specific media item.
 
@@ -182,11 +213,6 @@ class DatabaseRepository:
         Returns:
             Metadata dictionary for the media item
         """
-
-        if not mapped:
-            media_id = self._item_datapoint_mapping_cache[collection][item_id]
-        else:
-            media_id = item_id
 
         # Get metadata from tags
         metadata = {}
@@ -265,7 +291,12 @@ class DatabaseRepository:
             raise DatabaseError(f"Failed to retrieve related items for {item_id} from {collection}: {e}")
 
 
-    def get_item(self, collection: str, media_id: int, filters: list[int]=[]) -> Optional[Dict[str, Any]]:
+    def get_item(
+        self,
+        collection: str,
+        media_id: int,
+        filters: list[int]=[]
+    ) -> Optional[Dict[str, Any]]:
         """Retrieve a specific item's metadata by its ID.
 
         Args:
@@ -276,7 +307,6 @@ class DatabaseRepository:
         Returns:
             Item metadata dictionary or None if not found or invalid ID
         """
-        # if media_id not in self._metadata_cache:
         try:
             item = {}
             item['item_id'] = media_id
@@ -297,20 +327,20 @@ class DatabaseRepository:
                     item['metadata'] = \
                         self.get_media_metadata(
                             cursor, 
-                            collection,
                             media_id,
                             filters,
-                            mapped=True
                         )
-                self._metadata_cache[media_id] = item
                 return item
         except Exception as e:
             raise DatabaseError(f"Failed to retrieve metadata for item {media_id}: {e}")
-        # else:
-        #     return self._metadata_cache[media_id]
 
 
-    def get_group(self, collection: str, group_id: int, filters: list[int]=[]) -> Optional[Dict[str, Any]]:
+    def get_group(
+        self,
+        collection: str,
+        group_id: int,
+        filters: list[int]=[]
+    ) -> Optional[Dict[str, Any]]:
         """Retrieve a specific group's metadata by its ID.
 
         Args:
@@ -320,25 +350,20 @@ class DatabaseRepository:
         Returns:
             Group metadata dictionary or None if not found
         """
-        if group_id not in self._metadata_cache: 
-            try:
-                with self._db_connection[collection].cursor() as cursor:
-                    if self._db_type[collection] == 'duckdb':
-                        group_info = \
-                            self.get_media_metadata(
-                                cursor, 
-                                collection, 
-                                group_id,
-                                filters,
-                                mapped=True
-                            )
-                        return group_info
-                return None
-        
-            except Exception as e:
-                raise DatabaseError(f"Failed to retrieve group {group_id} from {collection}: {e}")
-        else:
-            return self._metadata_cache[int(group_id)]
+        try:
+            with self._db_connection[collection].cursor() as cursor:
+                if self._db_type[collection] == 'duckdb':
+                    group_info = \
+                        self.get_media_metadata(
+                            cursor, 
+                            group_id,
+                            filters,
+                        )
+                    return group_info
+            return None
+    
+        except Exception as e:
+            raise DatabaseError(f"Failed to retrieve group {group_id} from {collection}: {e}")
 
 
     def get_total_items(self, collection: str) -> int:
@@ -369,7 +394,10 @@ class DatabaseRepository:
             Set of item IDs that pass the filters
         """
         try:
-            query, params = db_helper.compile_active_filters(active=filters, tagtype_map=self._tagtype_cache[collection])
+            query, params = \
+                db_helper.compile_active_filters(
+                    active=filters, tagtype_map=self._tagtype_cache[collection]
+                )
             with self._db_connection[collection].cursor() as cursor:
                 passed_ids = [r[0] for r in cursor.execute(query, params).fetchall()]
                 return passed_ids
@@ -377,7 +405,7 @@ class DatabaseRepository:
             raise DatabaseError(f"Failed to retrieve filtered item IDs from {collection}: {e}")
 
 
-    def create_item_to_datapoint_mapping(self, collection: str, manifest_file: str) -> Dict[str, int]:
+    def create_item_to_datapoint_mapping(self, collection: str, manifest_file: str, file_type: int=1) -> Dict[str, int]:
         """Create a mapping from item IDs to their datapoint indices.
 
         This is useful for converting between item identifiers and their
@@ -398,9 +426,12 @@ class DatabaseRepository:
                     SELECT id, file_uri
                     FROM medias
                     WHERE group_id IS NOT NULL
+                    AND file_type = ?
                     ORDER BY id
-                    """)
+                    """,
+                    [file_type])
                 mapping = {}
+                rev_mapping = {}
                 if Path(manifest_file).exists():
                     with open(manifest_file, 'r') as f:
                         file_paths = {}
@@ -412,7 +443,8 @@ class DatabaseRepository:
                 else:
                     for idx, (media_id, _) in enumerate(rows.fetchall()):
                         mapping[idx] = media_id    
-                return mapping
+                        rev_mapping[media_id] = idx
+                return mapping, rev_mapping
         except Exception as e:
             raise DatabaseError(f"Failed to create item to datapoint mapping for collection {collection}: {e}")
 
@@ -427,10 +459,8 @@ class DatabaseRepository:
             collection: Name of the collection to clear, or None to clear all
         """
         if collection:
-            self._metadata_cache.pop(collection, None)
-            self._filters_cache.pop(collection, None)
             self._item_datapoint_mapping_cache.pop(collection, None)
+            self._rev_item_datapoint_mapping_cache.pop(collection, None)
         else:
-            self._metadata_cache.clear()
-            self._filters_cache.clear()
             self._item_datapoint_mapping_cache.clear()
+            self._rev_item_datapoint_mapping_cache.clear()
