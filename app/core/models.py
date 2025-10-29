@@ -313,8 +313,8 @@ class ApplicationContainer:
 
             # Load metadata
             if isinstance(metadata_repo, DatabaseRepository):
-                metadata_repo.load_database(collection, collection_config.database_file, 
-                                            collection_config.manifest_file)
+                metadata_repo.load_database(collection, collection_config.database_file)
+                metadata_repo.map_manifest_to_db(collection, collection_config.clip_manifest_file)
             else:
                 metadata_repo.load_metadata(collection, collection_config.metadata_file)
                 metadata_repo.load_filters(collection, collection_config.filters_file)
@@ -325,10 +325,16 @@ class ApplicationContainer:
             # Load indices
             index_repo.load_clip_index(collection, collection_config.clip_index)
 
-            if collection_config.caption_index:
+            if collection_config.caption_index and collection_config.caption_manifest_file:
                 index_repo.load_caption_index(
                     collection, collection_config.caption_index
                 )
+                if isinstance(metadata_repo, DatabaseRepository):
+                    metadata_repo.map_manifest_to_db(
+                        collection, 
+                        collection_config.caption_manifest_file,
+                        index='caption'
+                    )
 
             # Load PCA data or embeddings
             if (
