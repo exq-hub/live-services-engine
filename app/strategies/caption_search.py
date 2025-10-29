@@ -112,7 +112,6 @@ class CaptionSearchStrategy(TextSearchStrategy):
         #     collection
         # )
 
-        suggestions = []
         while True:
             last = active_n >= total_items
 
@@ -131,6 +130,7 @@ class CaptionSearchStrategy(TextSearchStrategy):
             # mapped_indices = [item_to_datapoint[shot] for shot in base_shots]
 
             # Filter results
+            suggestions = []
             for idx in mapped_indices:
                 if idx not in seen_set and idx not in excluded_set:
                     if (
