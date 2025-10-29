@@ -180,13 +180,13 @@ class RFSearchStrategy(RFSearchStrategy):
             # Search using hyperplane
             _, indices = self.index_repo.search_clip(collection, hyperplane, active_n)
 
-            indices = indices[0].tolist()
+            mapped_indices = indices[0].tolist()
             if isinstance(self.metadata_repo, DatabaseRepository):
                 indices = self.metadata_repo.get_media_ids(collection, indices)
 
             # Filter results
             suggestions = []
-            for idx in indices[0].tolist():
+            for idx in mapped_indices:
                 if idx not in seen_set and idx not in excluded_set:
                     if (
                         filters is None
