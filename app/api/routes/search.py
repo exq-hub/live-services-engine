@@ -4,7 +4,7 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
-from ...schemas import TextSearchRequest, RFSearchRequest
+from ...schemas import FacetedSearchRequest, TextSearchRequest, RFSearchRequest
 from ...services.search_service import SearchService
 from ...services.logging_service import LoggingService
 from ...core.exceptions import SearchError
@@ -166,6 +166,41 @@ async def rf_search(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.post("/faceted")
+async def faceted_search(
+    request: FacetedSearchRequest,
+    background_tasks: BackgroundTasks,
+    search_service: SearchService = Depends(get_search_service),
+) -> Dict[str, Any]:
+    """Search using filters only"""
+    try:
+        result = await search_service.search_faceted(request)
+
+        # Log the search request
+        background_tasks.add_task(
+            _log_search_request,
+            action="Faceted Search",
+            session=request.session_info.session,
+            model_id=request.session_info.modelId,
+            collection=request.session_info.collection,
+            query_data={
+                "filters": request.filters.model_dump_json()
+            },
+            suggestions=result["suggestions"],
+            request_timestamp=result["request_timestamp"],
+            completion_time=result["completion_time"],
+        )
+
+        return {"suggestions": result["suggestions"]}
+
+    except SearchError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
 
 
 async def _log_search_request(

@@ -146,6 +146,20 @@ class RFSearchRequest(BaseModel):
     session_info: SessionInfo
 
 
+class FacetedSearchRequest(BaseModel):
+    """Request model for faceted search operations.
+
+    Attributes:
+        n: Number of results to return
+        filters: Active filters to apply
+        session_info: Session context information
+    """
+
+    n: int
+    filters: ActiveFilters | ActiveFiltersDB
+    session_info: SessionInfo
+
+
 class TextSearchRequest(BaseModel):
     """Request model for text-based search operations.
 
