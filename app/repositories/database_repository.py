@@ -450,7 +450,6 @@ class DatabaseRepository:
                                 [start_sec_tagset_id, row[1]] + relevant_media_ids
                             ).fetchone()
                         results.append({'text': row[0], 'media_id': closest_media_keyframe[0]})
-                    print(suggestions, results)
                     return results
         except Exception as e:
             raise DatabaseError(f"Failed to get captions from suggestions {collection, suggestions}: {e}")
