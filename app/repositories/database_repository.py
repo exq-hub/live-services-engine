@@ -401,7 +401,7 @@ class DatabaseRepository:
                 if self._db_type[collection] == 'duckdb':
                     caption_rows = cursor.execute(
                         f"""
-                        SELECT text, start_sec, day_id, hour_id, camera_id FROM temp_table WHERE column0 IN ({ph})
+                        SELECT text, start_sec, day_id, hour_id, camera_id FROM transcript_table WHERE id IN ({ph})
                         """,
                         suggestions
                     ).fetchall()
@@ -450,6 +450,7 @@ class DatabaseRepository:
                                 [start_sec_tagset_id, row[1]] + relevant_media_ids
                             ).fetchone()
                         results.append({'text': row[0], 'media_id': closest_media_keyframe[0]})
+                    print(suggestions, results)
                     return results
         except Exception as e:
             raise DatabaseError(f"Failed to get captions from suggestions {collection, suggestions}: {e}")
