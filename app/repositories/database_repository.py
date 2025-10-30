@@ -368,7 +368,7 @@ class DatabaseRepository:
             raise DatabaseError(f"Failed to retrieve group {group_id} from {collection}: {e}")
 
 
-    def get_total_items(self, collection: str) -> int:
+    def get_total_items(self, collection: str, index='clip') -> int:
         """Get the total count of items in the specified collection.
 
         Args:
@@ -378,13 +378,81 @@ class DatabaseRepository:
             Total number of items, or 0 if collection not loaded
         """
         try:
-            count = self._db_connection[collection].execute(
-                "SELECT COUNT(*) FROM medias WHERE group_id IS NOT NULL"
-            ).fetchone()[0]
-            return count
+            if index == 'clip':
+                count = self._db_connection[collection].execute(
+                    "SELECT COUNT(*) FROM medias WHERE group_id IS NOT NULL"
+                ).fetchone()[0]
+                return count
+            elif index == 'caption':
+                count = self._db_connection[collection].execute(
+                    "SELECT COUNT(*) FROM temp_table"
+                ).fetchone()[0]
+                return count
         except Exception as e:
             raise DatabaseError(f"Failed to get total items for collection {collection}: {e}")
 
+    def get_captions_with_nearest_keyframes(self, collection:str, suggestions: List[int]) -> List[Dict[str, Any]]:
+        """
+        Get transcripts of suggestions along with their nearest keyframe
+        """
+        try:
+            with self._db_connection[collection].cursor() as cursor:
+                ph = ",".join("?" * len(suggestions))
+                if self._db_type[collection] == 'duckdb':
+                    caption_rows = cursor.execute(
+                        f"""
+                        SELECT text, start_sec, day_id, hour_id, camera_id FROM temp_table WHERE column0 IN ({ph})
+                        """,
+                        suggestions
+                    ).fetchall()
+                    start_sec_tagset_id = cursor.execute("SELECT id FROM tagsets WHERE name = 'Start (sec)'").fetchone()[0]
+                    results = []
+                    for row in caption_rows:
+                        relevant_media_ids = cursor.execute(
+                            """
+                            SELECT m.id, m.file_uri 
+                            FROM medias m
+                            JOIN taggings tgs ON tgs.media_id = m.id
+                            WHERE file_type = 1
+                            GROUP BY m.id, m.file_uri
+                            HAVING COUNT(DISTINCT CASE WHEN tgs.tag_id IN (?, ?, ?) THEN tgs.tag_id END) = 3
+                            ORDER BY m.id
+                            """,
+                            [row[2], row[3], row[4]]
+                        ).fetchall()
+                        relevant_media_ids = [r[0] for r in relevant_media_ids]
+                        ph = ",".join("?" * len(relevant_media_ids))
+                        closest_media_keyframe = cursor.execute(
+                            f"""
+                            SELECT m.id, m.file_uri, ndt.name
+                            FROM medias m
+                            JOIN taggings tgs ON tgs.media_id = m.id
+                            JOIN numerical_dec_tags ndt ON tgs.tag_id = ndt.id
+                            WHERE ndt.tagset_id = ?
+                            AND   ndt.name <= ?
+                            AND   m.id IN ({ph})
+                            ORDER BY ndt.name DESC
+                            """,
+                            [start_sec_tagset_id, row[1]] + relevant_media_ids
+                        ).fetchone()
+                        if closest_media_keyframe is None:
+                            closest_media_keyframe = cursor.execute(
+                                f"""
+                                SELECT m.id, m.file_uri, ndt.name
+                                FROM medias m
+                                JOIN taggings tgs ON tgs.media_id = m.id
+                                JOIN numerical_dec_tags ndt ON tgs.tag_id = ndt.id
+                                WHERE ndt.tagset_id = ?
+                                AND   ndt.name >= ?
+                                AND   m.id IN ({ph})
+                                ORDER BY ndt.name ASC
+                                """,
+                                [start_sec_tagset_id, row[1]] + relevant_media_ids
+                            ).fetchone()
+                        results.append({'text': row[0], 'media_id': closest_media_keyframe[0]})
+                    return results
+        except Exception as e:
+            raise DatabaseError(f"Failed to get captions from suggestions {collection, suggestions}: {e}")
 
     def get_filtered_media_ids(self, collection: str, filters: ActiveFiltersDB) -> set:
         """Retrieve item IDs that pass the specified active filters.

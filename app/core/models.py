@@ -329,12 +329,12 @@ class ApplicationContainer:
                 index_repo.load_caption_index(
                     collection, collection_config.caption_index
                 )
-                if isinstance(metadata_repo, DatabaseRepository):
-                    metadata_repo.map_manifest_to_db(
-                        collection, 
-                        collection_config.caption_manifest_file,
-                        index='caption'
-                    )
+                # if isinstance(metadata_repo, DatabaseRepository):
+                #     metadata_repo.map_manifest_to_db(
+                #         collection, 
+                #         collection_config.caption_manifest_file,
+                #         index='caption'
+                #     )
 
             # Load PCA data or embeddings
             if (
