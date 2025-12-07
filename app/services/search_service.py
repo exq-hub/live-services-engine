@@ -1,7 +1,7 @@
 """Search service that coordinates different search strategies."""
 
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from ..strategies.base import SearchStrategy, TextSearchStrategy, RFSearchStrategy, FacetedSearchStrategy
 from ..strategies.clip_search import CLIPSearchStrategy
@@ -9,7 +9,7 @@ from ..strategies.caption_search import CaptionSearchStrategy
 from ..strategies.rf_search import RFSearchStrategy as RFSearchImpl
 from ..strategies.faceted_search import FacetedSearchStrategy as FacetedSearchImpl
 from ..strategies.aggregate_search import AggregateSearchStrategy
-from ..schemas import ActiveFilters, FacetedSearchRequest, TextSearchRequest, RFSearchRequest
+from ..schemas import FacetedSearchRequest, TextSearchRequest, RFSearchRequest
 from ..core.exceptions import SearchError
 
 

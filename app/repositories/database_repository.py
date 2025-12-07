@@ -2,8 +2,6 @@ import duckdb
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from pydantic import FilePath
-
 from app.repositories import db_helper
 from app.schemas import ActiveFiltersDB
 
@@ -71,6 +69,14 @@ class DatabaseRepository:
         manifest_file: str,
         index: str='clip'
     ) -> None:
+        """Create item to datapoint mapping with the provided manifest file.
+
+        Args:
+            collection: Name of the collection to load metadata for
+            manifest_file: Text file listing file paths of datapoints in order
+        Raises:
+            DatabaseError: If mapping fails
+        """
         try:
             if index == 'clip':
                 file_type = 1 
@@ -453,6 +459,7 @@ class DatabaseRepository:
                     return results
         except Exception as e:
             raise DatabaseError(f"Failed to get captions from suggestions {collection, suggestions}: {e}")
+
 
     def get_filtered_media_ids(self, collection: str, filters: ActiveFiltersDB) -> set:
         """Retrieve item IDs that pass the specified active filters.

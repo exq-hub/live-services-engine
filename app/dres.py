@@ -29,7 +29,7 @@ def hello(shared=Depends(get_shared_resources)):
         "data": {"dres_session": dres_session},
     }
 
-    dump_log_msgpack(log_message, shared.logfile)
+    # dump_log_msgpack(log_message, shared.logfile)
 
     return {"message": "dres is ready!", "sessionId": "FILL_ME_PLEASSSSSE"}
 
@@ -75,7 +75,6 @@ def submit(body: SubmitRequest, shared=Depends(get_shared_resources)):
                     "answers": [
                         {
                             "mediaItemName": name,
-                            "mediaItemCollectionName": collection.lower(),
                             "start": int(midpoint_timestamp),
                             "end": int(midpoint_timestamp),
                         }
@@ -90,9 +89,8 @@ def submit(body: SubmitRequest, shared=Depends(get_shared_resources)):
                     "answers": [
                         {
                             "mediaItemName": body.name,
-                            "mediaItemCollectionName": collection.lower(),
-                            "start": int(float(body.start) * 1000),
-                            "end": int(float(body.end) * 1000),
+                            "start": int(float(body.start)),
+                            "end": int(float(body.end)),
                         }
                     ]
                 }
@@ -123,7 +121,7 @@ def submit(body: SubmitRequest, shared=Depends(get_shared_resources)):
             "end": end,
         },
     }
-    dump_log_msgpack(request_log_message, shared.logfile)
+    # dump_log_msgpack(request_log_message, shared.logfile)
 
     # Log the result of the submission
     result_log_message = {
@@ -131,7 +129,7 @@ def submit(body: SubmitRequest, shared=Depends(get_shared_resources)):
         "action": "DRES Response",
         "display_attrs": {"status_code": result.status_code, "response": result.json()},
     }
-    dump_log_msgpack(result_log_message, shared.logfile)
+    # dump_log_msgpack(result_log_message, shared.logfile)
 
     return result.json()
 

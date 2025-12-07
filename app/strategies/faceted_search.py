@@ -8,7 +8,9 @@ from ..core.exceptions import SearchError
 
 
 class FacetedSearchStrategy(FacetedSearchStrategy):
-    """Search strategy that faceted search."""
+    """
+    Search strategy using faceted filters.
+    """
 
     def __init__(self, metadata_repository):
         self.metadata_repo = metadata_repository
