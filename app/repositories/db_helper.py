@@ -7,12 +7,12 @@ def placeholders(n: int) -> str:
 
 def compile_active_filters(active: ActiveFiltersDB, tagtype_map: Dict[int, str]) -> Tuple[str, List[Any]]:
     """
-    active: ActiveFiltersDB as a dict (pydantic .model_dump()) with shape:
-      {"root": FilterExpr}
-    Returns (sql, params).
+    Args:
+        active: selected filters rrepresented as an ActiveFiltersDB instance (dict) with shape {"root": FilterExpr}
+    Returns (sql, params) for querying media_ids matching the filter expression
     """
-    params: List[Any] = []
 
+    # --- helper functions for compiling constraints ---
     def emit_value_any(tag_ids: List[int], negated: bool) -> Tuple[str, List[Any]]:
         if not tag_ids:
             # ANY with empty list: normally false; negated => true
@@ -58,12 +58,14 @@ def compile_active_filters(active: ActiveFiltersDB, tagtype_map: Dict[int, str])
             pass
 
         sub = (
-            f"EXISTS ("
-            f"  SELECT 1"
-            f"  FROM taggings x"
-            f"  JOIN {tagtype_map[tagtype_id]}_tags r ON r.id = x.tag_id"
-            f"  WHERE x.media_id = tgs.media_id AND " + " AND ".join(where_parts) +
-            f")"
+            f"""
+            EXISTS (
+                SELECT 1
+                FROM taggings x
+                JOIN {tagtype_map[tagtype_id]}_tags r ON r.id = x.tag_id
+                WHERE x.media_id = tgs.media_id AND {" AND ".join(where_parts)}
+            )
+            """
         )
         if negated:
             sub = f"NOT ({sub})"
@@ -76,7 +78,7 @@ def compile_active_filters(active: ActiveFiltersDB, tagtype_map: Dict[int, str])
         constraint = f.constraint
         neg = leaf.not_
 
-        # Value constraint?
+        # Value constraint
         if isinstance(constraint, DBValueConstraint):
             ids = constraint.value_ids
             op = constraint.operator
@@ -87,11 +89,10 @@ def compile_active_filters(active: ActiveFiltersDB, tagtype_map: Dict[int, str])
             else:
                 raise ValueError(f"Unknown value operator: {op}")
 
-        # Range constraint?
+        # Range constraint
         if isinstance(constraint, DBRangeConstraint):
             return emit_range_exists(fid, tagtype, constraint.lower_bound, 
                                      constraint.upper_bound, neg)
-
         raise ValueError("Unrecognized constraint shape")
 
     def compile_group(group: FilterGroup) -> Tuple[str, List[Any]]:
@@ -102,7 +103,6 @@ def compile_active_filters(active: ActiveFiltersDB, tagtype_map: Dict[int, str])
 
         for child in group.children:
             sql_i, params_i = compile_expr(child)
-            # Skip tautologies/contradictions if you like; simplest is to keep all.
             child_sqls.append(f"({sql_i})")
             child_params.extend(params_i)
 
@@ -125,8 +125,11 @@ def compile_active_filters(active: ActiveFiltersDB, tagtype_map: Dict[int, str])
         else:
             raise ValueError(f"Unknown node kind: {node}")
 
-    # --- build final SQL ---
+
+    # --- build final SQL query text ---
+
     expr_sql, expr_params = compile_expr(active.root)
+    params: List[Any] = []
     params.extend(expr_params)
 
     sql = (

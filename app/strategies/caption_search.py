@@ -4,7 +4,9 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
+from app.core.models import ModelManager
 from app.repositories.database_repository import DatabaseRepository
+from app.repositories.index_repository import IndexRepository
 from app.repositories.metadata_repository import MetadataRepository
 
 from .base import TextSearchStrategy
@@ -16,7 +18,11 @@ from ..core.exceptions import SearchError
 class CaptionSearchStrategy(TextSearchStrategy):
     """Search strategy using caption embeddings."""
 
-    def __init__(self, model_manager, index_repository, metadata_repository):
+    def __init__(
+        self, 
+        model_manager: ModelManager,
+        index_repository: IndexRepository, 
+        metadata_repository: MetadataRepository | DatabaseRepository):
         self.model_manager = model_manager
         self.index_repo = index_repository
         self.metadata_repo = metadata_repository
