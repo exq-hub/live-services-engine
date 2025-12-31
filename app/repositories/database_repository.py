@@ -176,7 +176,7 @@ class DatabaseRepository:
                     
                     rows = cursor.execute(
                         f"""
-                        SELECT t.id, t.name 
+                        SELECT t.id, t.value 
                         FROM {self._tagtype_cache[collection][tagtype_id]}_tags t
                         JOIN tagsets ts ON t.tagset_id = ts.id
                         WHERE ts.tagtype_id = ? AND ts.id = ?
@@ -257,17 +257,17 @@ class DatabaseRepository:
         )
         for row in grouped.itertuples():
             tag_ids_placeholder = ",".join(['?'] * len(row.tag_ids))
-            tag_names = cursor.execute(f"""
-                SELECT name 
+            tag_values = cursor.execute(f"""
+                SELECT value 
                 FROM {row.tagtype}_tags
                 WHERE id IN ({tag_ids_placeholder})
                 """,
                 row.tag_ids
             ).fetchall()
-            if len(tag_names) > 1:
-                metadata[row.tagset_name] = [name[0] for name in tag_names]
+            if len(tag_values) > 1:
+                metadata[row.tagset_name] = [value[0] for value in tag_values]
             else:
-                metadata[row.tagset_name] = tag_names[0][0]
+                metadata[row.tagset_name] = tag_values[0][0]
         return metadata
 
 
@@ -320,14 +320,17 @@ class DatabaseRepository:
             item['item_id'] = media_id
             with self._db_connection[collection].cursor() as cursor:
                 if self._db_type[collection] == 'sqlite':
-                    media_info = cursor.execute("""
-                            SELECT m.file_uri,
-                                    m.group_id,
-                                    m2.file_uri as group_uri
-                            FROM medias m
-                            JOIN medias m2 ON m2.id = m.group_id
-                            WHERE m.id = ?
-                            """, [media_id]).fetchone()
+                    media_info = cursor.execute(
+                        """
+                        SELECT m.source,
+                               m.group_id,
+                               m2.source as group_src
+                        FROM medias m
+                        JOIN medias m2 ON m2.id = m.group_id
+                        WHERE m.id = ?
+                        """, 
+                        [media_id]
+                    ).fetchone()
                     # TODO Consider renaming fields for clarity 
                     item['thumbnail_uri'] = media_info[0]
                     item['group'] = media_info[1]
@@ -384,20 +387,12 @@ class DatabaseRepository:
             Total number of items, or 0 if collection not loaded
         """
         try:
-            if index == 'clip':
-                count = self._db_connection[collection].execute(
-                    "SELECT COUNT(*) FROM medias WHERE group_id IS NOT NULL"
-                ).fetchone()
-                return count
-            elif index == 'caption':
-                count = self._db_connection[collection].execute(
-                    "SELECT COUNT(*) FROM temp_table"
-                ).fetchone()
-                return count
+            return len(self._item_datapoint_mapping_cache[collection][index])
         except Exception as e:
             raise DatabaseError(f"Failed to get total items for collection {collection}: {e}")
 
     # TODO: Figure out if we keep this
+    # NOTE: In the database there will be a tagset for the text source (e.g., 'Caption', 'Transcript')
     def get_text_source_with_nearest_keyframes(self, collection:str, source:str, suggestions: List[int]) -> List[Dict[str, Any]]:
     # def get_captions_with_nearest_keyframes(self, collection:str, suggestions: List[int]) -> List[Dict[str, Any]]:
         """
@@ -422,11 +417,11 @@ class DatabaseRepository:
                     for row in caption_rows:
                         relevant_media_ids = cursor.execute(
                             """
-                            SELECT m.id, m.file_uri 
+                            SELECT m.id, m.source 
                             FROM medias m
                             JOIN taggings tgs ON tgs.media_id = m.id
                             WHERE file_type = 1
-                            GROUP BY m.id, m.file_uri
+                            GROUP BY m.id, m.source
                             HAVING COUNT(DISTINCT CASE WHEN tgs.tag_id IN (?, ?, ?) THEN tgs.tag_id END) = 3
                             ORDER BY m.id
                             """,
@@ -437,28 +432,28 @@ class DatabaseRepository:
                         print(f"Relevant media IDs for caption '{row[0]}': {relevant_media_ids}")
                         closest_media_keyframe = cursor.execute(
                             f"""
-                            SELECT m.id, m.file_uri, ndt.name
+                            SELECT m.id, m.source, ndt.value
                             FROM medias m
                             JOIN taggings tgs ON tgs.media_id = m.id
                             JOIN numerical_dec_tags ndt ON tgs.tag_id = ndt.id
                             WHERE ndt.tagset_id = ?
-                            AND   ndt.name <= ?
+                            AND   ndt.value <= ?
                             AND   m.id IN ({ph})
-                            ORDER BY ndt.name DESC
+                            ORDER BY ndt.value DESC
                             """,
                             [start_sec_tagset_id, row[1]] + relevant_media_ids
                         ).fetchone()
                         if closest_media_keyframe is None:
                             closest_media_keyframe = cursor.execute(
                                 f"""
-                                SELECT m.id, m.file_uri, ndt.name
+                                SELECT m.id, m.source, ndt.value
                                 FROM medias m
                                 JOIN taggings tgs ON tgs.media_id = m.id
                                 JOIN numerical_dec_tags ndt ON tgs.tag_id = ndt.id
                                 WHERE ndt.tagset_id = ?
-                                AND   ndt.name >= ?
+                                AND   ndt.value >= ?
                                 AND   m.id IN ({ph})
-                                ORDER BY ndt.name ASC
+                                ORDER BY ndt.value ASC
                                 """,
                                 [start_sec_tagset_id, row[1]] + relevant_media_ids
                             ).fetchone()
@@ -507,7 +502,7 @@ class DatabaseRepository:
             if self._db_type[collection] == 'sqlite':
                 rows = cursor.execute(
                     """
-                    SELECT id, file_uri
+                    SELECT id, source
                     FROM medias
                     WHERE group_id IS NOT NULL
                     AND file_type = ?
