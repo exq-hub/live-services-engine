@@ -45,13 +45,13 @@ def compile_active_filters(active: ActiveFiltersDB, tagtype_map: Dict[int, str])
 
         # Build the bound predicates. BETWEEN if both present, otherwise one-sided.
         if lower is not None and upper is not None:
-            where_parts.append(f"r.name BETWEEN ? AND ?")
+            where_parts.append(f"r.value BETWEEN ? AND ?")
             p.extend([lower, upper])
         elif lower is not None:
-            where_parts.append(f"r.name >= ?")
+            where_parts.append(f"r.value >= ?")
             p.append(lower)
         elif upper is not None:
-            where_parts.append(f"r.name <= ?")
+            where_parts.append(f"r.value <= ?")
             p.append(upper)
         else:
             # No bounds means "any value in this set"; keep just the set_id check.
