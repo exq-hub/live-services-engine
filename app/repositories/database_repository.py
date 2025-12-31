@@ -1,4 +1,4 @@
-import duckdb
+import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -16,7 +16,7 @@ class DatabaseRepository:
 
     def __init__(self):
         """Initialize the metadata repository with empty caches."""
-        self._db_connection: Dict[str, duckdb.DuckDBPyConnection] = {}
+        self._db_connection: Dict[str, sqlite3.Connection] = {}
         self._db_type: Dict[str, str] = {}
         self._item_datapoint_mapping_cache: Dict[str, Dict[int, int]] = {}
         self._rev_item_datapoint_mapping_cache: Dict[str, Dict[int, int]] = {}
@@ -26,7 +26,7 @@ class DatabaseRepository:
         self,
         collection: str,
         database_file: str,
-        database: str='duckdb',
+        database: str='sqlite',
     ) -> None:
         """
         Open connection to the database file and create item to datapoint mapping
@@ -46,8 +46,8 @@ class DatabaseRepository:
             if not db_path.exists():
                 raise DatabaseError(f"Database file not found: {database_file}")
             self._db_type[collection] = database
-            if database == 'duckdb':
-                self._db_connection[collection] = duckdb.connect(db_path, read_only=True)
+            if database == 'sqlite':
+                self._db_connection[collection] = sqlite3.connect(db_path, autocommit=False)
                 rows = self._db_connection[collection].execute(
                     """
                     SELECT id, description as name 
@@ -131,7 +131,7 @@ class DatabaseRepository:
         try:
             filters = {}
             with self._db_connection[collection].cursor() as cursor:
-                if self._db_type[collection] == 'duckdb':
+                if self._db_type[collection] == 'sqlite':
                     rows = cursor.execute(
                         """
                         SELECT ts.id, ts.name, tt.id as tagtype_id, tt.description as tagtype
@@ -168,7 +168,7 @@ class DatabaseRepository:
         """
         try:
             with self._db_connection[collection].cursor() as cursor:
-                if self._db_type[collection] == 'duckdb':
+                if self._db_type[collection] == 'sqlite':
                     if tagtype_id not in self._tagtype_cache[collection]:
                         raise DatabaseError(
                             f"Tagtype with id {tagtype_id} not found in collection {collection}: {e}"
@@ -205,7 +205,7 @@ class DatabaseRepository:
 
     def get_media_metadata(
         self, 
-        cursor: duckdb.DuckDBPyConnection,
+        cursor: sqlite3.Connection,
         media_id: int, 
         filters: List[str]=[],
         index: str='clip'
@@ -283,7 +283,7 @@ class DatabaseRepository:
         try:
             with self._db_connection[collection].cursor() as cursor:
                 related_items = []
-                if self._db_type[collection] == 'duckdb':
+                if self._db_type[collection] == 'sqlite':
                     rows = cursor.execute(
                         """
                         SELECT id
@@ -319,7 +319,7 @@ class DatabaseRepository:
             item = {}
             item['item_id'] = media_id
             with self._db_connection[collection].cursor() as cursor:
-                if self._db_type[collection] == 'duckdb':
+                if self._db_type[collection] == 'sqlite':
                     media_info = cursor.execute("""
                             SELECT m.file_uri,
                                     m.group_id,
@@ -360,7 +360,7 @@ class DatabaseRepository:
         """
         try:
             with self._db_connection[collection].cursor() as cursor:
-                if self._db_type[collection] == 'duckdb':
+                if self._db_type[collection] == 'sqlite':
                     group_info = \
                         self.get_media_metadata(
                             cursor, 
@@ -387,30 +387,36 @@ class DatabaseRepository:
             if index == 'clip':
                 count = self._db_connection[collection].execute(
                     "SELECT COUNT(*) FROM medias WHERE group_id IS NOT NULL"
-                ).fetchone()[0]
+                ).fetchone()
                 return count
             elif index == 'caption':
                 count = self._db_connection[collection].execute(
                     "SELECT COUNT(*) FROM temp_table"
-                ).fetchone()[0]
+                ).fetchone()
                 return count
         except Exception as e:
             raise DatabaseError(f"Failed to get total items for collection {collection}: {e}")
 
-    def get_captions_with_nearest_keyframes(self, collection:str, suggestions: List[int]) -> List[Dict[str, Any]]:
+    # TODO: Figure out if we keep this
+    def get_text_source_with_nearest_keyframes(self, collection:str, source:str, suggestions: List[int]) -> List[Dict[str, Any]]:
+    # def get_captions_with_nearest_keyframes(self, collection:str, suggestions: List[int]) -> List[Dict[str, Any]]:
         """
-        Get transcripts of suggestions along with their nearest keyframe
+        Get source for suggestions along with their nearest keyframe
         """
+        if source not in ['caption', 'transcript']:
+            raise DatabaseError(f"Source must be 'caption' or 'transcript', got {source}")
+
         try:
             with self._db_connection[collection].cursor() as cursor:
                 ph = ",".join("?" * len(suggestions))
-                if self._db_type[collection] == 'duckdb':
+                if self._db_type[collection] == 'sqlite':
                     caption_rows = cursor.execute(
                         f"""
                         SELECT text, start_sec, day_id, hour_id, camera_id FROM transcript_table WHERE id IN ({ph})
                         """,
                         suggestions
                     ).fetchall()
+                    # TODO: Replace above query with taggings query that gets the 'transcript' or 'caption' tag, 'Start (sec)' tag, and group_id
                     start_sec_tagset_id = cursor.execute("SELECT id FROM tagsets WHERE name = 'Start (sec)'").fetchone()[0]
                     results = []
                     for row in caption_rows:
@@ -428,6 +434,7 @@ class DatabaseRepository:
                         ).fetchall()
                         relevant_media_ids = [r[0] for r in relevant_media_ids]
                         ph = ",".join("?" * len(relevant_media_ids))
+                        print(f"Relevant media IDs for caption '{row[0]}': {relevant_media_ids}")
                         closest_media_keyframe = cursor.execute(
                             f"""
                             SELECT m.id, m.file_uri, ndt.name
@@ -497,7 +504,7 @@ class DatabaseRepository:
         """
         try:
             cursor = self._db_connection[collection].cursor()
-            if self._db_type[collection] == 'duckdb':
+            if self._db_type[collection] == 'sqlite':
                 rows = cursor.execute(
                     """
                     SELECT id, file_uri

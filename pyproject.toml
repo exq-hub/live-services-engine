@@ -6,7 +6,6 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "compress-pickle>=2.1.0",
-    "duckdb>=1.4.1",
     "faiss-cpu>=1.11.0",
     "fastapi>=0.115.12",
     "h5py>=3.13.0",
