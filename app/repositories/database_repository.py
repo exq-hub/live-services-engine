@@ -18,9 +18,10 @@ class DatabaseRepository:
         """Initialize the metadata repository with empty caches."""
         self._db_connection: Dict[str, sqlite3.Connection] = {}
         self._db_type: Dict[str, str] = {}
-        self._item_datapoint_mapping_cache: Dict[str, Dict[int, int]] = {}
-        self._rev_item_datapoint_mapping_cache: Dict[str, Dict[int, int]] = {}
+        self._item_datapoint_mapping_cache: Dict[str, Dict[str, Dict[int, int]]] = {}
+        self._rev_item_datapoint_mapping_cache: Dict[str, Dict[str, Dict[int, int]]] = {}
         self._tagtype_cache: Dict[str, Dict[int, str]] = {}
+            
 
     def load_database(
         self,
@@ -79,14 +80,14 @@ class DatabaseRepository:
         """
         try:
             if index == 'clip':
-                file_type = 1 
+                source_type = 1 
             elif index == 'caption':
-                file_type = 4
+                source_type = 4
             (
                 self._item_datapoint_mapping_cache[collection][index],
                 self._rev_item_datapoint_mapping_cache[collection][index]
             ) = \
-                self.create_item_to_datapoint_mapping(collection, manifest_file, file_type)
+                self.create_item_to_datapoint_mapping(collection, manifest_file, source_type)
         except Exception as e:
             raise DatabaseError(f"Failed to map manifest {manifest_file}: {e}")
 
@@ -487,7 +488,7 @@ class DatabaseRepository:
             raise DatabaseError(f"Failed to retrieve filtered item IDs from {collection}: {e}")
 
 
-    def create_item_to_datapoint_mapping(self, collection: str, manifest_file: str, file_type: int=1) -> Dict[str, int]:
+    def create_item_to_datapoint_mapping(self, collection: str, manifest_file: str, file_type: int=1, index='clip') -> Dict[str, int]:
         """Create a mapping from item IDs to their datapoint indices.
 
         This is useful for converting between item identifiers and their
@@ -508,10 +509,10 @@ class DatabaseRepository:
                     SELECT id, source
                     FROM medias
                     WHERE group_id IS NOT NULL
-                    AND file_type = ?
+                    AND source_type = ?
                     ORDER BY id
                     """,
-                    [file_type])
+                    [source_type])
                 mapping = {}
                 rev_mapping = {}
                 if Path(manifest_file).exists():
@@ -519,14 +520,40 @@ class DatabaseRepository:
                         file_paths = {}
                         for idx, line in enumerate(f):
                             file_paths[line.strip()] = idx
-                        for media_id, file_uri in rows.fetchall():
-                            if file_uri in file_paths:
-                                mapping[file_paths[file_uri]] = media_id
-                                rev_mapping[media_id] = file_paths[file_uri]
+                        for media_id, source in rows.fetchall():
+                            if source in file_paths:
+                                mapping[file_paths[source]] = media_id
+                                rev_mapping[media_id] = file_paths[source]
                 else:
-                    for idx, (media_id, _) in enumerate(rows.fetchall()):
-                        mapping[idx] = media_id    
-                        rev_mapping[media_id] = idx
+                    # Determine tagset ID based on index type
+                    ts_id = None
+                    if index == 'clip':
+                        ts_id = cursor.execute("SELECT id FROM tagsets WHERE name = 'CLIP Index ID'").fetchone()
+                    elif index == 'caption':
+                        ts_id = cursor.execute("SELECT id FROM tagsets WHERE name = 'Caption Index ID'").fetchone()
+                    elif index == 'transcript':
+                        ts_id = cursor.execute("SELECT id FROM tagsets WHERE name = 'Transcript Index ID'").fetchone()
+
+                    if ts_id is not None:
+                        # Fetch mapping from numerical_int_tags
+                        ts_id = ts_id[0]
+                        res = cursor.execute(
+                            """
+                            SELECT m.id, nit.value
+                            FROM medias m
+                            JOIN taggings tgs ON m.id = tgs.media_id
+                            JOIN numerical_int_tags nit ON tgs.tag_id = nit.id
+                            WHERE numerical_int_tags.tagset_id = ?
+                            """,
+                            [ts_id]
+                        ).fetchall()
+                        for media_id, index_id in res:
+                            mapping[index_id] = media_id
+                            rev_mapping[media_id] = index_id
+
+                if mapping.empty():
+                    raise DatabaseError(f"No valid item to datapoint mapping could be created for collection {collection}")
+
                 return mapping, rev_mapping
         except Exception as e:
             raise DatabaseError(f"Failed to create item to datapoint mapping for collection {collection}: {e}")
