@@ -392,79 +392,84 @@ class DatabaseRepository:
         except Exception as e:
             raise DatabaseError(f"Failed to get total items for collection {collection}: {e}")
 
-    # TODO: Figure out if we keep this
-    # NOTE: In the database there will be a tagset for the text source (e.g., 'Caption', 'Transcript')
-    def get_text_source_with_nearest_keyframes(self, collection:str, source:str, suggestions: List[int]) -> List[Dict[str, Any]]:
-    # def get_captions_with_nearest_keyframes(self, collection:str, suggestions: List[int]) -> List[Dict[str, Any]]:
+    def get_text_source_with_nearest_keyframes(self, collection:str, index:str, suggestions: List[int]) -> List[Dict[str, Any]]:
         """
         Get source for suggestions along with their nearest keyframe
         """
-        if source not in ['caption', 'transcript']:
-            raise DatabaseError(f"Source must be 'caption' or 'transcript', got {source}")
-
         try:
+            if index not in ['caption', 'transcript']:
+                raise DatabaseError(f"Index must be 'caption' or 'transcript', got {index}")
+
+            media_ids = self.get_media_ids(collection, suggestions, index)
+            if len(media_ids) != len(suggestions):
+                raise DatabaseError(f"Returned media_ids do not match the amount of provided list")
+
             with self._db_connection[collection].cursor() as cursor:
                 ph = ",".join("?" * len(suggestions))
-                if self._db_type[collection] == 'sqlite':
-                    caption_rows = cursor.execute(
+                closest_kf_ts_id = cursor.execute(
+                    "SELECT id FROM tagsets WHERE name = 'Closest Keyframe'"
+                ).fetchone()
+                if closest_kf_ts_id is not None:
+                    closest_kf_ts_id = closest_kf_ts_id[0]
+                    res = cursor.execute(
                         f"""
-                        SELECT text, start_sec, day_id, hour_id, camera_id FROM transcript_table WHERE id IN ({ph})
+                        SELECT at.value as text, nit.value as closest_kf_id
+                        FROM taggings tgs
+                        JOIN alphanumerical_tags at ON at.id = tgs.tag_id
+                        JOIN numerical_int_tags nit ON nit.id = tgs.tag_id
+                        WHERE nit.tagset_id = ?
+                        AND   at.tagset_id = (SELECT id FROM tagset WHERE name = ?)
+                        AND   tgs.media_id IN ({ph})
                         """,
-                        suggestions
+                        [closest_kf_ts_id, index.capitalize()] + media_ids
                     ).fetchall()
-                    # TODO: Replace above query with taggings query that gets the 'transcript' or 'caption' tag, 'Start (sec)' tag, and group_id
-                    start_sec_tagset_id = cursor.execute("SELECT id FROM tagsets WHERE name = 'Start (sec)'").fetchone()[0]
-                    results = []
-                    for row in caption_rows:
-                    # All keyframes for a video
-                        relevant_media_ids = cursor.execute(
-                            """
-                            SELECT m.id, m.source 
-                            FROM medias m
-                            JOIN taggings tgs ON tgs.media_id = m.id
-                            WHERE file_type = 1
-                            GROUP BY m.id, m.source
-                            HAVING COUNT(DISTINCT CASE WHEN tgs.tag_id IN (?, ?, ?) THEN tgs.tag_id END) = 3
-                            ORDER BY m.id
-                            """,
-                            [row[2], row[3], row[4]]
-                        ).fetchall()
-                        relevant_media_ids = [r[0] for r in relevant_media_ids]
-                        ph = ",".join("?" * len(relevant_media_ids))
-                        print(f"Relevant media IDs for caption '{row[0]}': {relevant_media_ids}")
-                    # Determine the closest keyframe to the start second of the text (transcript / caption)
-                    # Where closest is kf.start_sec <= text.start_sec
-                        closest_media_keyframe = cursor.execute(
-                            f"""
-                            SELECT m.id, m.source, ndt.value
-                            FROM medias m
-                            JOIN taggings tgs ON tgs.media_id = m.id
-                            JOIN numerical_dec_tags ndt ON tgs.tag_id = ndt.id
-                            WHERE ndt.tagset_id = ?
-                            AND   ndt.value <= ?
-                            AND   m.id IN ({ph})
-                            ORDER BY ndt.value DESC
-                            """,
-                            [start_sec_tagset_id, row[1]] + relevant_media_ids
-                        ).fetchone()
-                        if closest_media_keyframe is None:
-                            closest_media_keyframe = cursor.execute(
-                                f"""
-                                SELECT m.id, m.source, ndt.value
-                                FROM medias m
-                                JOIN taggings tgs ON tgs.media_id = m.id
-                                JOIN numerical_dec_tags ndt ON tgs.tag_id = ndt.id
-                                WHERE ndt.tagset_id = ?
-                                AND   ndt.value >= ?
-                                AND   m.id IN ({ph})
-                                ORDER BY ndt.value ASC
-                                """,
-                                [start_sec_tagset_id, row[1]] + relevant_media_ids
-                            ).fetchone()
-                        results.append({'text': row[0], 'media_id': closest_media_keyframe[0]})
-                    return results
+                    if res is not None or len(res) > 0:
+                        results = [{'text': r[0], 'media_id': r[1]} for r in res]
+                        return results
+                
+                # if no closest keyframe tagset exists for index, calculate based on 'Start (sec)' tagset
+                start_sec_tagset_id = cursor.execute("SELECT id FROM tagsets WHERE name = 'Start (sec)'").fetchone()[0]
+                text_rows = cursor.execute(
+                    f"""
+                    SELECT m.id, m.group_id, at.value as text, ndt.value as start_sec 
+                    FROM medias m
+                    JOIN taggings tgs ON m.id = tgs.media_id
+                    JOIN alphanumerical_tags at ON tgs.tag_id = at.id
+                    JOIN numerical_dec_tags ndt ON tgs.tag_id = ndt.id
+                    WHERE id in ({ph})
+                    AND   at.tagset_id = (SELECT id FROM tagset WHERE name = ?)
+                    AND   ndt.tagset_id = ?
+                    """,
+                    media_ids + [index.capitalize(), start_sec_tagset_id]
+                ).fetchall()
+                results = []
+                for row in text_rows:
+                    grp_id = row[1]
+                    text = row[2]
+                    txt_start_sec = row[3]
+                    # Pick the keyframe with the smallest absolute difference to the start time of the text
+                    closest_keyframe = cursor.execute(
+                        f"""
+                        SELECT m.id, ABS(ndt.value - $1) as abs_difference
+                        FROM medias m
+                        JOIN taggings tgs ON m.id = tgs.media_id
+                        JOIN numerical_dec_tags ndt ON tgs.tag_id = ndt.id
+                        WHERE source_type = 1   -- Image
+                        AND m.group_id = $2     -- Video
+                        AND ndt.tagset_id = $3  -- Start (sec) ID
+                        ORDER BY abs_difference ASC, ndt.value ASC -- On ties choose the earlier time keyframe
+                        LIMIT 1
+                        """,
+                        [txt_start_sec, grp_id, start_sec_tagset_id]
+                    ).fetchone()
+
+                    if closest_keyframe is None:
+                        raise DatabaseError("Could not determine closest keyframe through tagsets")
+
+                    results.append({'text': text, 'media_id': closest_keyframe[0]})
+                return results
         except Exception as e:
-            raise DatabaseError(f"Failed to get captions from suggestions {collection, suggestions}: {e}")
+            raise DatabaseError(f"Failed to get nearest keyframes for text suggestions {collection, suggestions}: {e}")
 
 
     def get_filtered_media_ids(self, collection: str, filters: ActiveFiltersDB) -> set:
@@ -488,7 +493,7 @@ class DatabaseRepository:
             raise DatabaseError(f"Failed to retrieve filtered item IDs from {collection}: {e}")
 
 
-    def create_item_to_datapoint_mapping(self, collection: str, manifest_file: str, file_type: int=1, index='clip') -> Dict[str, int]:
+    def create_item_to_datapoint_mapping(self, collection: str, manifest_file: str, source_type: int=1, index='clip') -> Dict[str, int]:
         """Create a mapping from item IDs to their datapoint indices.
 
         This is useful for converting between item identifiers and their
