@@ -160,4 +160,4 @@ class CaptionSearchStrategy(TextSearchStrategy):
             active_n = min(active_n * 2, total_items)
 
         if isinstance(self.metadata_repo, DatabaseRepository):
-            return self.metadata_repo.get_captions_with_nearest_keyframes(collection, suggestions)
+            return self.metadata_repo.get_text_source_with_nearest_keyframes(collection, 'caption', suggestions)
