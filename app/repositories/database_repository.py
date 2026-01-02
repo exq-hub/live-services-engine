@@ -415,6 +415,7 @@ class DatabaseRepository:
                     start_sec_tagset_id = cursor.execute("SELECT id FROM tagsets WHERE name = 'Start (sec)'").fetchone()[0]
                     results = []
                     for row in caption_rows:
+                    # All keyframes for a video
                         relevant_media_ids = cursor.execute(
                             """
                             SELECT m.id, m.source 
@@ -430,6 +431,8 @@ class DatabaseRepository:
                         relevant_media_ids = [r[0] for r in relevant_media_ids]
                         ph = ",".join("?" * len(relevant_media_ids))
                         print(f"Relevant media IDs for caption '{row[0]}': {relevant_media_ids}")
+                    # Determine the closest keyframe to the start second of the text (transcript / caption)
+                    # Where closest is kf.start_sec <= text.start_sec
                         closest_media_keyframe = cursor.execute(
                             f"""
                             SELECT m.id, m.source, ndt.value
