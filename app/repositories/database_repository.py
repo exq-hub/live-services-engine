@@ -556,7 +556,7 @@ class DatabaseRepository:
                             mapping[index_id] = media_id
                             rev_mapping[media_id] = index_id
 
-                if mapping.empty():
+                if mapping == {}:
                     raise DatabaseError(f"No valid item to datapoint mapping could be created for collection {collection}")
 
                 return mapping, rev_mapping
