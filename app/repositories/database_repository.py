@@ -1,3 +1,4 @@
+from calendar import c
 import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -22,6 +23,14 @@ class DatabaseRepository:
         self._rev_item_datapoint_mapping_cache: Dict[str, Dict[str, Dict[int, int]]] = {}
         self._tagtype_cache: Dict[str, Dict[int, str]] = {}
             
+    
+    def __del__(self):
+        """Close all database connections on deletion."""
+        for conn in self._db_connection.values():
+            try:
+                conn.close()
+            except Exception:
+                pass
 
     def load_database(
         self,
@@ -129,23 +138,25 @@ class DatabaseRepository:
         Returns:
             Cached filter definitions dictionary or None if not loaded
         """
+        cursor = None
         try:
             filters = {}
-            with self._db_connection[collection].cursor() as cursor:
-                if self._db_type[collection] == 'sqlite':
-                    rows = cursor.execute(
-                        """
-                        SELECT ts.id, ts.name, tt.id as tagtype_id, tt.description as tagtype
-                        FROM tagsets ts 
-                        JOIN tag_types tt ON ts.tagtype_id = tt.id
-                        """
-                        ).fetchall()
-                    columns = [col[0] for col in cursor.description]
-                    filters = [dict(zip(columns,row)) for row in rows]
+            cursor = self._db_connection[collection].cursor()
+            rows = cursor.execute(
+                """
+                SELECT ts.id, ts.name, tt.id as tagtype_id, tt.description as tagtype
+                FROM tagsets ts 
+                JOIN tag_types tt ON ts.tagtype_id = tt.id
+                """
+            ).fetchall()
+            columns = [col[0] for col in cursor.description]
+            filters = [dict(zip(columns,row)) for row in rows]
             return filters
-        
         except Exception as e:
             raise DatabaseError(f"Failed to retrieve filters from {collection}: {e}")
+        finally:
+            if cursor:
+                cursor.close()
 
 
     def get_filter_values(
@@ -167,28 +178,31 @@ class DatabaseRepository:
         Raises:
             DatabaseError: If retrieval fails
         """
+        cursor = None
         try:
-            with self._db_connection[collection].cursor() as cursor:
-                if self._db_type[collection] == 'sqlite':
-                    if tagtype_id not in self._tagtype_cache[collection]:
-                        raise DatabaseError(
-                            f"Tagtype with id {tagtype_id} not found in collection {collection}: {e}"
-                        )
-                    
-                    rows = cursor.execute(
-                        f"""
-                        SELECT t.id, t.value 
-                        FROM {self._tagtype_cache[collection][tagtype_id]}_tags t
-                        JOIN tagsets ts ON t.tagset_id = ts.id
-                        WHERE ts.tagtype_id = ? AND ts.id = ?
-                        """,
-                        [tagtype_id, filter_id]
-                    ).fetchall()
-                    columns = [col[0] for col in cursor.description]
-                    filter_values = [dict(zip(columns,row)) for row in rows]
-                return filter_values
+            cursor = self._db_connection[collection].cursor()
+            if tagtype_id not in self._tagtype_cache[collection]:
+                raise DatabaseError(
+                    f"Tagtype with id {tagtype_id} not found in collection {collection}: {e}"
+                )
+            
+            rows = cursor.execute(
+                f"""
+                SELECT t.id, t.value 
+                FROM {self._tagtype_cache[collection][tagtype_id]}_tags t
+                JOIN tagsets ts ON t.tagset_id = ts.id
+                WHERE ts.tagtype_id = ? AND ts.id = ?
+                """,
+                [tagtype_id, filter_id]
+            ).fetchall()
+            columns = [col[0] for col in cursor.description]
+            filter_values = [dict(zip(columns,row)) for row in rows]
+            return filter_values
         except Exception as e:
             raise DatabaseError(f"Failed to retrieve filter values of {filter_id} from {collection}: {e}")
+        finally:
+            if cursor:
+                cursor.close()
 
 
     def get_media_ids(self, collection, index_ids: list[int], index='clip') -> list[int]:
@@ -281,23 +295,27 @@ class DatabaseRepository:
         Returns:
             Cached related items for a specific item
         """
+        cursor = None
         try:
-            with self._db_connection[collection].cursor() as cursor:
-                related_items = []
-                if self._db_type[collection] == 'sqlite':
-                    rows = cursor.execute(
-                        """
-                        SELECT id
-                        FROM medias
-                        WHERE group_id = (SELECT group_id FROM medias WHERE id = ?)
-                        """,
-                        [item_id]
-                    ).fetchall()
-                    if rows:
-                        related_items = [row[0] for row in rows]
-                return related_items
+            cursor = self._db_connection[collection].cursor() 
+            related_items = []
+            if self._db_type[collection] == 'sqlite':
+                rows = cursor.execute(
+                    """
+                    SELECT id
+                    FROM medias
+                    WHERE group_id = (SELECT group_id FROM medias WHERE id = ?)
+                    """,
+                    [item_id]
+                ).fetchall()
+                if rows:
+                    related_items = [row[0] for row in rows]
+            return related_items
         except Exception as e:
-            raise DatabaseError(f"Failed to retrieve related items for {item_id} from {collection}: {e}")
+            raise DatabaseError(f"Failed to retrieve related items for {item_id} from {collection}: {e}") 
+        finally:
+            if cursor:
+                cursor.close()
 
 
     def get_item(
@@ -316,35 +334,38 @@ class DatabaseRepository:
         Returns:
             Item metadata dictionary or None if not found or invalid ID
         """
+        cursor = None
         try:
             item = {}
             item['item_id'] = media_id
-            with self._db_connection[collection].cursor() as cursor:
-                if self._db_type[collection] == 'sqlite':
-                    media_info = cursor.execute(
-                        """
-                        SELECT m.source,
-                               m.group_id,
-                               m2.source as group_src
-                        FROM medias m
-                        JOIN medias m2 ON m2.id = m.group_id
-                        WHERE m.id = ?
-                        """, 
-                        [media_id]
-                    ).fetchone()
-                    # TODO Consider renaming fields for clarity 
-                    item['thumbnail_uri'] = media_info[0]
-                    item['group'] = media_info[1]
-                    item['media_uri'] = media_info[2]
-                    item['metadata'] = \
-                        self.get_media_metadata(
-                            cursor, 
-                            media_id,
-                            filters,
-                        )
-                return item
+            cursor = self._db_connection[collection].cursor() 
+            media_info = cursor.execute(
+                """
+                SELECT m.source,
+                       m.group_id,
+                       m2.source as group_src
+                FROM medias m
+                JOIN medias m2 ON m2.id = m.group_id
+                WHERE m.id = ?
+                """, 
+                [media_id]
+            ).fetchone()
+            # TODO Consider renaming fields for clarity 
+            item['thumbnail_uri'] = media_info[0]
+            item['group'] = media_info[1]
+            item['media_uri'] = media_info[2]
+            item['metadata'] = \
+                self.get_media_metadata(
+                    cursor, 
+                    media_id,
+                    filters,
+                )
+            return item
         except Exception as e:
             raise DatabaseError(f"Failed to retrieve metadata for item {media_id}: {e}")
+        finally:
+            if cursor:
+                cursor.close()
 
 
     def get_group(
@@ -362,18 +383,16 @@ class DatabaseRepository:
         Returns:
             Group metadata dictionary or None if not found
         """
+        cursor = None
         try:
-            with self._db_connection[collection].cursor() as cursor:
-                if self._db_type[collection] == 'sqlite':
-                    group_info = \
-                        self.get_media_metadata(
-                            cursor, 
-                            group_id,
-                            filters,
-                        )
-                    return group_info
-            return None
-    
+            cursor = self._db_connection[collection].cursor()
+            group_info = \
+                self.get_media_metadata(
+                    cursor, 
+                    group_id,
+                    filters,
+                )
+            return group_info
         except Exception as e:
             raise DatabaseError(f"Failed to retrieve group {group_id} from {collection}: {e}")
 
@@ -396,6 +415,7 @@ class DatabaseRepository:
         """
         Get source for suggestions along with their nearest keyframe
         """
+        cursor = None
         try:
             if index not in ['caption', 'transcript']:
                 raise DatabaseError(f"Index must be 'caption' or 'transcript', got {index}")
@@ -404,73 +424,77 @@ class DatabaseRepository:
             if len(media_ids) != len(suggestions):
                 raise DatabaseError(f"Returned media_ids do not match the amount of provided list")
 
-            with self._db_connection[collection].cursor() as cursor:
-                ph = ",".join("?" * len(suggestions))
-                closest_kf_ts_id = cursor.execute(
-                    "SELECT id FROM tagsets WHERE name = 'Closest Keyframe'"
-                ).fetchone()
-                if closest_kf_ts_id is not None:
-                    closest_kf_ts_id = closest_kf_ts_id[0]
-                    res = cursor.execute(
-                        f"""
-                        SELECT at.value as text, nit.value as closest_kf_id
-                        FROM taggings tgs
-                        JOIN alphanumerical_tags at ON at.id = tgs.tag_id
-                        JOIN numerical_int_tags nit ON nit.id = tgs.tag_id
-                        WHERE nit.tagset_id = ?
-                        AND   at.tagset_id = (SELECT id FROM tagset WHERE name = ?)
-                        AND   tgs.media_id IN ({ph})
-                        """,
-                        [closest_kf_ts_id, index.capitalize()] + media_ids
-                    ).fetchall()
-                    if res is not None or len(res) > 0:
-                        results = [{'text': r[0], 'media_id': r[1]} for r in res]
-                        return results
-                
-                # if no closest keyframe tagset exists for index, calculate based on 'Start (sec)' tagset
-                start_sec_tagset_id = cursor.execute("SELECT id FROM tagsets WHERE name = 'Start (sec)'").fetchone()[0]
-                text_rows = cursor.execute(
+            cursor = self._db_connection[collection].cursor()
+            ph = ",".join("?" * len(suggestions))
+            closest_kf_ts_id = cursor.execute(
+                "SELECT id FROM tagsets WHERE name = 'Closest Keyframe'"
+            ).fetchone()
+            if closest_kf_ts_id is not None:
+                closest_kf_ts_id = closest_kf_ts_id[0]
+                res = cursor.execute(
                     f"""
-                    SELECT m.id, m.group_id, at.value as text, ndt.value as start_sec 
+                    SELECT at.value as text, nit.value as closest_kf_id
+                    FROM taggings tgs
+                    JOIN alphanumerical_tags at ON at.id = tgs.tag_id
+                    JOIN numerical_int_tags nit ON nit.id = tgs.tag_id
+                    WHERE nit.tagset_id = ?
+                    AND   at.tagset_id = (SELECT id FROM tagset WHERE name = ?)
+                    AND   tgs.media_id IN ({ph})
+                    """,
+                    [closest_kf_ts_id, index.capitalize()] + media_ids
+                ).fetchall()
+                if res is not None or len(res) > 0:
+                    results = [{'text': r[0], 'media_id': r[1]} for r in res]
+                    return results
+                
+            # if no closest keyframe tagset exists for index, calculate based on 'Start (sec)' tagset
+            start_sec_tagset_id = cursor.execute("SELECT id FROM tagsets WHERE name = 'Start (sec)'").fetchone()[0]
+            text_rows = cursor.execute(
+                f"""
+                SELECT m.id, m.group_id, at.value as text, ndt.value as start_sec 
+                FROM medias m
+                JOIN taggings tgs ON m.id = tgs.media_id
+                JOIN alphanumerical_tags at ON tgs.tag_id = at.id
+                JOIN numerical_dec_tags ndt ON tgs.tag_id = ndt.id
+                WHERE id in ({ph})
+                AND   at.tagset_id = (SELECT id FROM tagset WHERE name = ?)
+                AND   ndt.tagset_id = ?
+                """,
+                media_ids + [index.capitalize(), start_sec_tagset_id]
+            ).fetchall()
+            results = []
+            for row in text_rows:
+                grp_id = row[1]
+                text = row[2]
+                txt_start_sec = row[3]
+                # Pick the keyframe with the smallest absolute difference to the start time of the text
+                closest_keyframe = cursor.execute(
+                    f"""
+                    SELECT m.id, ABS(ndt.value - $1) as abs_difference
                     FROM medias m
                     JOIN taggings tgs ON m.id = tgs.media_id
-                    JOIN alphanumerical_tags at ON tgs.tag_id = at.id
                     JOIN numerical_dec_tags ndt ON tgs.tag_id = ndt.id
-                    WHERE id in ({ph})
-                    AND   at.tagset_id = (SELECT id FROM tagset WHERE name = ?)
-                    AND   ndt.tagset_id = ?
+                    WHERE source_type = 1   -- Image
+                    AND m.group_id = $2     -- Video
+                    AND ndt.tagset_id = $3  -- Start (sec) ID
+                    ORDER BY abs_difference ASC, ndt.value ASC -- On ties choose the earlier time keyframe
+                    LIMIT 1
                     """,
-                    media_ids + [index.capitalize(), start_sec_tagset_id]
-                ).fetchall()
-                results = []
-                for row in text_rows:
-                    grp_id = row[1]
-                    text = row[2]
-                    txt_start_sec = row[3]
-                    # Pick the keyframe with the smallest absolute difference to the start time of the text
-                    closest_keyframe = cursor.execute(
-                        f"""
-                        SELECT m.id, ABS(ndt.value - $1) as abs_difference
-                        FROM medias m
-                        JOIN taggings tgs ON m.id = tgs.media_id
-                        JOIN numerical_dec_tags ndt ON tgs.tag_id = ndt.id
-                        WHERE source_type = 1   -- Image
-                        AND m.group_id = $2     -- Video
-                        AND ndt.tagset_id = $3  -- Start (sec) ID
-                        ORDER BY abs_difference ASC, ndt.value ASC -- On ties choose the earlier time keyframe
-                        LIMIT 1
-                        """,
-                        [txt_start_sec, grp_id, start_sec_tagset_id]
-                    ).fetchone()
+                    [txt_start_sec, grp_id, start_sec_tagset_id]
+                ).fetchone()
 
-                    if closest_keyframe is None:
-                        raise DatabaseError("Could not determine closest keyframe through tagsets")
+                if closest_keyframe is None:
+                    raise DatabaseError("Could not determine closest keyframe through tagsets")
 
-                    results.append({'text': text, 'media_id': closest_keyframe[0]})
-                return results
+                results.append({'text': text, 'media_id': closest_keyframe[0]})
+            return results
         except Exception as e:
-            raise DatabaseError(f"Failed to get nearest keyframes for text suggestions {collection, suggestions}: {e}")
-
+            raise DatabaseError(
+                f"Failed to get nearest keyframes for text suggestions {collection, suggestions}: {e}"
+            )
+        finally:
+            if cursor:
+                cursor.close()
 
     def get_filtered_media_ids(self, collection: str, filters: ActiveFiltersDB) -> set:
         """Retrieve item IDs that pass the specified active filters.
@@ -481,16 +505,20 @@ class DatabaseRepository:
         Returns:
             Set of item IDs that pass the filters
         """
+        cursor = None
         try:
             query, params = \
                 db_helper.compile_active_filters(
                     active=filters, tagtype_map=self._tagtype_cache[collection]
                 )
-            with self._db_connection[collection].cursor() as cursor:
-                passed_ids = [r[0] for r in cursor.execute(query, params).fetchall()]
-                return passed_ids
+            cursor = self._db_connection[collection].cursor()
+            passed_ids = [r[0] for r in cursor.execute(query, params).fetchall()]
+            return passed_ids
         except Exception as e:
             raise DatabaseError(f"Failed to retrieve filtered item IDs from {collection}: {e}")
+        finally:
+            if cursor:
+                cursor.close()
 
 
     def create_item_to_datapoint_mapping(self, collection: str, manifest_file: str, source_type: int=1, index='clip') -> Dict[str, int]:
