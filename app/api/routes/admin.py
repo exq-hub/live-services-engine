@@ -1,6 +1,6 @@
 """Administrative and logging API routes."""
 
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, BackgroundTasks, Depends
 
@@ -73,10 +73,10 @@ async def get_filters(
     collection: str,
     background_tasks: BackgroundTasks,
     metadata_repo: MetadataRepository | DatabaseRepository=Depends(get_metadata_repository),
-) -> Dict[str, Any]:
+) -> List[Dict[str, Any]]:
     """Get available filter definitions for a collection"""
     try:
-        filters = metadata_repo.get_filters(collection) or {}
+        filters = metadata_repo.get_filters(collection) or []
 
         # Log the request
         background_tasks.add_task(
@@ -86,8 +86,7 @@ async def get_filters(
             filters=filters,
         )
 
-        return {"filters": filters}
-
+        return filters
     except Exception as e:
         from fastapi import HTTPException
 
