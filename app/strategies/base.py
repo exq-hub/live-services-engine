@@ -1,7 +1,7 @@
 """Base classes for search strategies."""
 
 from abc import ABC, abstractmethod
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional
 
 from ..schemas import ActiveFilters, ActiveFiltersDB
 
