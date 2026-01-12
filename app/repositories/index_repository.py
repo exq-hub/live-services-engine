@@ -7,20 +7,22 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple
 import numpy as np
 
+from app.core.indexes import BaseIndex, FaissIndex, ZarrIndex
+
 from ..core.exceptions import IndexError
 
 
 class IndexRepository:
-    """Repository for managing FAISS indices and embeddings."""
+    """Repository for managing vector indices and embeddings."""
 
     def __init__(self):
-        self._clip_indices: Dict[str, faiss.Index] = {}
-        self._caption_indices: Dict[str, faiss.Index] = {}
+        self._clip_indices: Dict[str, BaseIndex] = {}
+        self._caption_indices: Dict[str, BaseIndex] = {}
         self._pca_models: Dict[str, Dict] = {}
         self._embeddings_zarr: Dict[str, str] = {}
 
-    def load_clip_index(self, collection: str, index_path: str) -> faiss.Index:
-        """Load CLIP FAISS index for a collection."""
+    def load_clip_index(self, collection: str, index_path: str, index_type = "faiss") -> BaseIndex:
+        """Load CLIP index for a collection."""
         try:
             if collection in self._clip_indices:
                 return self._clip_indices[collection]
@@ -29,15 +31,24 @@ class IndexRepository:
             if not index_file.exists():
                 raise IndexError(f"CLIP index file not found: {index_path}")
 
-            index = faiss.read_index(str(index_file))
-            self._clip_indices[collection] = index
-            return index
+            if index_type == "faiss":
+                self._clip_indices[collection] = FaissIndex()
+            elif index_type == "zarr":
+                self._clip_indices[collection] = ZarrIndex()
+            elif index_type == "ecp":
+                raise IndexError("eCP is not currently supported for indices.")
+            else:
+                raise IndexError(f"Unsupported index type: {index_type}")
+
+            self._clip_indices[collection].load_index(index_file)
+
+            return self._clip_indices[collection]
 
         except Exception as e:
             raise IndexError(f"Failed to load CLIP index from {index_path}: {e}")
 
-    def load_caption_index(self, collection: str, index_path: str) -> faiss.Index:
-        """Load caption FAISS index for a collection."""
+    def load_caption_index(self, collection: str, index_path: str, index_type = "faiss") -> BaseIndex:
+        """Load caption index for a collection."""
         try:
             if collection in self._caption_indices:
                 return self._caption_indices[collection]
@@ -46,9 +57,18 @@ class IndexRepository:
             if not index_file.exists():
                 raise IndexError(f"Caption index file not found: {index_path}")
 
-            index = faiss.read_index(str(index_file))
-            self._caption_indices[collection] = index
-            return index
+            if index_type == "faiss":
+                self._caption_indices[collection] = FaissIndex()
+            elif index_type == "zarr":
+                self._caption_indices[collection] = ZarrIndex()
+            elif index_type == "ecp":
+                raise IndexError("eCP is not currently supported for indices.")
+            else:
+                raise IndexError(f"Unsupported index type: {index_type}")
+
+            self._caption_indices[collection].load_index(index_file)
+
+            return self._caption_indices[collection]
 
         except Exception as e:
             raise IndexError(f"Failed to load caption index from {index_path}: {e}")
@@ -106,11 +126,11 @@ class IndexRepository:
 
         self._embeddings_zarr[collection] = str(embeddings_file)
 
-    def get_clip_index(self, collection: str) -> Optional[faiss.Index]:
+    def get_clip_index(self, collection: str) -> Optional[BaseIndex]:
         """Get CLIP index for a collection."""
         return self._clip_indices.get(collection)
 
-    def get_caption_index(self, collection: str) -> Optional[faiss.Index]:
+    def get_caption_index(self, collection: str) -> Optional[BaseIndex]:
         """Get caption index for a collection."""
         return self._caption_indices.get(collection)
 
@@ -122,22 +142,39 @@ class IndexRepository:
         """Get embeddings zarr path for a collection."""
         return self._embeddings_zarr.get(collection)
 
+    def is_query_in_state_clip(self, collection: str, state: int) -> bool:
+        """Check if a query state exists for a collection."""
+        
+        index = self.get_clip_index(collection)
+        if index is None:
+            raise IndexError(f"CLIP index not loaded for collection: {collection}")
+
+        if self._clip_indices[collection].query_state_support:
+            return self._clip_indices[collection].is_query_in_state(state)
+
+        return False
+
     def search_clip(
-        self, collection: str, query_vector: np.ndarray, k: int
-    ) -> Tuple[np.ndarray, np.ndarray]:
+        self, collection: str, query_vector: np.ndarray, k: int,
+        skip_ids: set[int] = set()
+        #, q_id: int = -1, resume: bool = False
+    ) -> Tuple[int, np.ndarray]:
         """Search CLIP index."""
         index = self.get_clip_index(collection)
         if index is None:
             raise IndexError(f"CLIP index not loaded for collection: {collection}")
 
         try:
-            distances, indices = index.search(query_vector, k)
-            return distances, indices
+            _, indices = index.search(query_vector, k, skip_ids=skip_ids)
+            return indices
+            # q_id, indices = index.search(q_id, query_vector, k)
+            # return q_id, indices
         except Exception as e:
             raise IndexError(f"CLIP search failed for collection {collection}: {e}")
 
     def search_caption(
-        self, collection: str, query_vector: np.ndarray, k: int
+        self, collection: str, query_vector: np.ndarray, k: int,
+        q_id: int = -1, resume: bool = False
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Search caption index."""
         index = self.get_caption_index(collection)
