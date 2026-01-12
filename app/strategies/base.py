@@ -65,7 +65,7 @@ class TextSearchStrategy(SearchStrategy):
         n: int,
         seen: List[int],
         excluded: List[int],
-        filters: Optional[ActiveFilters] = None,
+        filters: Optional[ActiveFilters |ActiveFiltersDB] = None,
     ) -> List[int]:
         """Execute a text-based search and return matching item indices.
 
