@@ -174,7 +174,8 @@ class IndexRepository:
 
     def search_caption(
         self, collection: str, query_vector: np.ndarray, k: int,
-        q_id: int = -1, resume: bool = False
+        skip_ids: set[int] = set()
+        # q_id: int = -1, resume: bool = False
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Search caption index."""
         index = self.get_caption_index(collection)
@@ -182,8 +183,8 @@ class IndexRepository:
             raise IndexError(f"Caption index not loaded for collection: {collection}")
 
         try:
-            distances, indices = index.search(query_vector, k)
-            return distances, indices
+            _, indices = index.search(query_vector, k, skip_ids=skip_ids)
+            return indices
         except Exception as e:
             raise IndexError(f"Caption search failed for collection {collection}: {e}")
 
