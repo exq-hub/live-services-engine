@@ -101,63 +101,27 @@ class CaptionSearchStrategy(TextSearchStrategy):
         """Search with expanding radius until sufficient results."""
         active_n = n
         total_items = self.metadata_repo.get_total_items(collection, index='caption')
-        # if filters and isinstance(self.metadata_repo, DatabaseRepository):
-        #     passed_ids = []
-        #     passed_ids = self.metadata_repo.get_filtered_media_ids(
-        #         collection, filters
-        #     )
-        # elif isinstance(self.metadata_repo, MetadataRepository):
-        #     metadata = self.metadata_repo.get_metadata(collection)
-        #     collection_filters = self.metadata_repo.get_filters(collection)
+        skip_ids = set()
+        if len(seen_set) != 0:
+            skip_ids.update(self.metadata_repo.get_index_ids(collection, list(seen_set), index='caption'))
+        if len(excluded_set) != 0:
+            skip_ids.update(self.metadata_repo.get_index_ids(collection, list(excluded_set), index='caption'))
 
-
-        # Get shot mapping data
-        # shot_overlap_mapper = self.model_manager.get_shot_overlap_mapper(collection)
-        # caption_shot_ids_list = self.model_manager.get_caption_shot_ids_list(collection)
-        # item_to_datapoint = self.metadata_repo.create_item_to_datapoint_mapping(
-        #     collection
-        # )
-
-        while True:
-            last = active_n >= total_items
-
-            # Search caption index
-            _, indices = self.index_repo.search_caption(
-                collection, text_features, active_n
+        if filters:
+            passed_ids = []
+            passed_ids = self.metadata_repo.get_filtered_media_ids(
+                collection, filters
             )
+            # NOTE: Can use the size of passed_ids to determine if index search is needed
+            #       If it is lower than a certain threshold we can search through the subset with
+            #       the zarr embeddings array directly
+            index_passed_ids = self.metadata_repo.get_index_ids(collection, passed_ids, index='caption')
+            index_skip_ids = set(range(total_items)) - set(index_passed_ids)
+            skip_ids.update(index_skip_ids)
 
-            # mapped_indices = indices[0].tolist()
-            # if isinstance(self.metadata_repo, DatabaseRepository):
-            #     mapped_indices = self.metadata_repo.get_media_ids(collection, mapped_indices, index='caption')
-            
-            # Map caption indices to shot indices
-            # caption_ids = [caption_shot_ids_list[idx] for idx in indices[0].tolist()]
-            # base_shots = [shot_overlap_mapper[cap_id][0] for cap_id in caption_ids]
-            # mapped_indices = [item_to_datapoint[shot] for shot in base_shots]
+        indices = self.index_repo.search_caption(
+            collection, text_features, active_n, skip_ids=skip_ids
+        )
+        suggestions = self.metadata_repo.get_media_ids(collection, indices, index='caption')
 
-            # Filter results
-            suggestions = []
-            for idx in indices[0].tolist():
-                if idx not in seen_set and idx not in excluded_set:
-                    # if (
-                    #     filters is None
-                    #     or (isinstance(self.metadata_repo, DatabaseRepository) and idx in passed_ids)
-                    #     or (isinstance(self.metadata_repo, MetadataRepository)
-                    #         and check_active_filters(metadata["items"][idx], filters, collection_filters)
-                    #     )
-                    # ):
-                    suggestions.append(idx)
-            
-
-            # Check if we have enough results
-            if len(suggestions) >= n:
-                suggestions = suggestions[:n]
-                break
-            elif last:
-                break
-
-            # Expand search radius
-            active_n = min(active_n * 2, total_items)
-
-        if isinstance(self.metadata_repo, DatabaseRepository):
-            return self.metadata_repo.get_text_source_with_nearest_keyframes(collection, 'caption', suggestions)
+        return self.metadata_repo.get_text_source_with_nearest_keyframes(collection, 'caption', suggestions)
