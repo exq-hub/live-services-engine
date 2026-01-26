@@ -1,6 +1,9 @@
 """Service for handling item-related operations."""
 
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Tuple, Any
+
+from app.repositories.database_repository import DatabaseRepository
+from app.repositories.metadata_repository import MetadataRepository
 
 from ..schemas import ItemRequest, IsExcludedRequest
 from ..core.exceptions import MetadataError
@@ -10,13 +13,13 @@ class ItemService:
     """Service for item-related operations."""
 
     def __init__(self, metadata_repository, config_manager):
-        self.metadata_repo = metadata_repository
+        self.metadata_repo: MetadataRepository | DatabaseRepository = metadata_repository
         self.config_manager = config_manager
 
     def get_item_base_info(self, request: ItemRequest) -> Dict[str, Any]:
         """Get basic information for an item."""
         collection = request.session_info.collection
-        item = self.metadata_repo.get_item(collection, request.itemId)
+        item = self.metadata_repo.get_item(collection, request.itemId, request.filter_ids)
 
         if not item:
             raise MetadataError(
@@ -37,6 +40,7 @@ class ItemService:
             "relatedGroupId": item["group"],
             "thumbPath": f"{collection_config.thumbnail_media_url}/{item['thumbnail_uri']}",
             "srcPath": f"{collection_config.original_media_url}/{item['media_uri']}",
+            "metadata": item["metadata"]
         }
 
         # Add segment info for videos
@@ -52,29 +56,37 @@ class ItemService:
     def get_item_detailed_info(self, request: ItemRequest) -> Dict[str, Any]:
         """Get detailed information for an item."""
         collection = request.session_info.collection
-        item = self.metadata_repo.get_item(collection, request.itemId)
+        if isinstance(self.metadata_repo, DatabaseRepository):
+            item = self.metadata_repo.get_item(collection, request.itemId, request.filter_ids)
+            group = self.metadata_repo.get_group(collection, item["group"], request.filter_ids)
+        else:
+            item = self.metadata_repo.get_item(collection, request.itemId)
+            group = self.metadata_repo.get_group(collection, item["group"])
 
         if not item:
             raise MetadataError(
                 f"Item {request.itemId} not found in collection {collection}"
             )
 
-        group = self.metadata_repo.get_group(collection, item["group"])
-
         # Process item metadata
-        info_pairs = []
+        info_pairs = {}
+        info_pairs['item'] = []
         if "metadata" in item:
-            info_pairs.extend(self._process_metadata(item["metadata"]))
+            info_pairs['item'].extend(self._process_metadata(item["metadata"]))
 
         # Process group metadata
         if group:
-            info_pairs.extend(self._process_group_data(group))
+            info_pairs['group'] = []
+            info_pairs['group'].extend(self._process_group_data(group))
 
         return {"infoPairs": info_pairs}
 
     def get_related_items(self, request: ItemRequest) -> Dict[str, List[int]]:
         """Get related items for an item."""
         collection = request.session_info.collection
+        if isinstance(self.metadata_repo, DatabaseRepository):
+            related_items = self.metadata_repo.get_related_items(collection, request.itemId)
+            return {"related": related_items}
         item = self.metadata_repo.get_item(collection, request.itemId)
 
         if not item:
@@ -116,16 +128,10 @@ class ItemService:
         """Process item metadata into display format."""
         info_pairs = []
 
-        # Skip certain metadata fields
-        skip_fields = {"caption", "ocr", "utc_time", "timezone", "segment_info"}
-
         for key, value in metadata.items():
-            if key in skip_fields:
-                continue
-
             display_name = key.replace("_", " ").capitalize()
 
-            if isinstance(value, list) and len(value) > 0:
+            if isinstance(value, list):
                 display_values = [str(s).replace("_", " ").capitalize() for s in value]
             else:
                 display_values = [str(value).replace("_", " ").capitalize()]

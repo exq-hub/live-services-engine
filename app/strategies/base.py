@@ -1,9 +1,9 @@
 """Base classes for search strategies."""
 
 from abc import ABC, abstractmethod
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 
-from ..schemas import ActiveFilters
+from ..schemas import ActiveFilters, ActiveFiltersDB
 
 
 class SearchStrategy(ABC):
@@ -100,7 +100,7 @@ class RFSearchStrategy(SearchStrategy):
         n: int,
         seen: List[int],
         excluded: List[int],
-        filters: Optional[ActiveFilters] = None,
+        filters: Optional[ActiveFilters | ActiveFiltersDB] = None,
         query: Optional[str] = None,
     ) -> List[int]:
         """Execute a relevance feedback search and return matching item indices.
@@ -114,6 +114,33 @@ class RFSearchStrategy(SearchStrategy):
             excluded: List of item IDs to exclude from results
             filters: Optional filters to apply to the search
             query: Optional text query to combine with feedback
+
+        Returns:
+            List of item indices matching the relevance feedback criteria
+        """
+        pass
+
+
+class FacetedSearchStrategy(SearchStrategy):
+    """Abstract base class for faceted search strategies.
+
+    This class specializes the SearchStrategy interface for strategies
+    that use filters fetch items.
+    """
+
+    @abstractmethod
+    async def search(
+        self,
+        collection: str,
+        filters: ActiveFilters | ActiveFiltersDB,
+        n: int,
+    ) -> List[int]:
+        """Execute a relevance feedback search and return matching item indices.
+
+        Args:
+            collection: Name of the data collection to search
+            n: Maximum number of results to return
+            filters: Optional filters to apply to the search
 
         Returns:
             List of item indices matching the relevance feedback criteria

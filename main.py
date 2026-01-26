@@ -9,6 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.models import container
 from app.core.exceptions import LSEException, ConfigurationError
 from app.api.routes import search, items, admin
+from app.repositories.database_repository import DatabaseRepository
+from app.repositories.metadata_repository import MetadataRepository
 from app.services.logging_service import AuditLogger, LoggingService
 
 # Configure logging
@@ -136,11 +138,18 @@ async def health_check():
 
         # Quick validation that data is loaded
         for collection in collections[:1]:  # Check first collection
-            if not metadata_repo.get_metadata(collection):
-                return {
-                    "status": "unhealthy",
-                    "reason": f"Metadata not loaded for {collection}",
-                }
+            if isinstance(metadata_repo, MetadataRepository):
+                if not metadata_repo.get_metadata(collection):
+                    return {
+                        "status": "unhealthy",
+                        "reason": f"Metadata not loaded for {collection}",
+                    }
+            elif isinstance(metadata_repo, DatabaseRepository):
+                if not metadata_repo.is_loaded(collection):
+                    return {
+                        "status": "unhealthy",
+                        "reason": f"Database not loaded for {collection}",
+                    }
 
             if not index_repo.get_clip_index(collection):
                 return {
