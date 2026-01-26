@@ -17,6 +17,7 @@ from rich.text import Text
 
 from .config import ConfigManager, LSEConfig
 from .exceptions import ModelLoadError
+from ..repositories.database_repository import DatabaseRepository
 from ..repositories.metadata_repository import MetadataRepository
 from ..repositories.index_repository import IndexRepository
 from ..search_utils import ShotOverlapMapper
@@ -253,7 +254,7 @@ class ApplicationContainer:
     def __init__(self):
         self._config_manager: Optional[ConfigManager] = None
         self._model_manager: Optional[ModelManager] = None
-        self._metadata_repo: Optional[MetadataRepository] = None
+        self._metadata_repo: Optional[MetadataRepository | DatabaseRepository] = None
         self._index_repo: Optional[IndexRepository] = None
         self._initialized = False
 
@@ -273,10 +274,11 @@ class ApplicationContainer:
         return self._model_manager
 
     @property
-    def metadata_repository(self) -> MetadataRepository:
+    def metadata_repository(self) -> MetadataRepository | DatabaseRepository:
         """Get the metadata repository."""
         if self._metadata_repo is None:
-            self._metadata_repo = MetadataRepository()
+            # self._metadata_repo = MetadataRepository()
+            self._metadata_repo = DatabaseRepository()
         return self._metadata_repo
 
     @property
@@ -310,19 +312,29 @@ class ApplicationContainer:
             collection_config = config.collection_configs[collection]
 
             # Load metadata
-            metadata_repo.load_metadata(collection, collection_config.metadata_file)
-            metadata_repo.load_filters(collection, collection_config.filters_file)
-            metadata_repo.load_related_items(
-                collection, collection_config.related_items_file
-            )
+            if isinstance(metadata_repo, DatabaseRepository):
+                metadata_repo.load_database(collection, collection_config.database_file)
+                metadata_repo.map_manifest_to_db(collection, collection_config.clip_manifest_file)
+            else:
+                metadata_repo.load_metadata(collection, collection_config.metadata_file)
+                metadata_repo.load_filters(collection, collection_config.filters_file)
+                metadata_repo.load_related_items(
+                    collection, collection_config.related_items_file
+                )
 
             # Load indices
             index_repo.load_clip_index(collection, collection_config.clip_index)
 
-            if collection_config.caption_index:
+            if collection_config.caption_index and collection_config.caption_manifest_file:
                 index_repo.load_caption_index(
                     collection, collection_config.caption_index
                 )
+                # if isinstance(metadata_repo, DatabaseRepository):
+                #     metadata_repo.map_manifest_to_db(
+                #         collection, 
+                #         collection_config.caption_manifest_file,
+                #         index='caption'
+                #     )
 
             # Load PCA data or embeddings
             if (

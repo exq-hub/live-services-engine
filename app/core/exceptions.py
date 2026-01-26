@@ -41,6 +41,11 @@ class MetadataError(LSEException):
 
     pass
 
+class DatabaseError(LSEException):
+    """Raised when there's an issue with database operations."""
+
+    pass
+
 
 class ValidationError(LSEException):
     """Raised when data validation fails."""
