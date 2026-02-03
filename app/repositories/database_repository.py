@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from app.repositories import db_helper
-from app.schemas import ActiveFiltersDB
+from app.schemas import ActiveFilters
 
 from ..core.exceptions import DatabaseError
 
@@ -532,12 +532,12 @@ class DatabaseRepository:
             if cursor:
                 cursor.close()
 
-    def get_filtered_media_ids(self, collection: str, filters: ActiveFiltersDB) -> set:
+    def get_filtered_media_ids(self, collection: str, filters: ActiveFilters) -> set:
         """Retrieve item IDs that pass the specified active filters.
         
         Args:
             collection: Name of the collection
-            filters: ActiveFiltersDB object specifying filter criteria
+            filters: ActiveFilters object specifying filter criteria
         Returns:
             Set of item IDs that pass the filters
         """

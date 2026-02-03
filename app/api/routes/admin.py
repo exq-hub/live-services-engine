@@ -5,7 +5,6 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, BackgroundTasks, Depends
 
 from app.repositories.database_repository import DatabaseRepository
-from app.repositories.metadata_repository import MetadataRepository
 
 from ...schemas import (
     SessionInfo,
@@ -13,7 +12,7 @@ from ...schemas import (
     AppliedFilter,
     ClearItemSetRequest,
 )
-from ..dependencies import get_metadata_repository, get_config_manager
+from ..dependencies import get_database_repository, get_config_manager
 
 router = APIRouter(prefix="/exq", tags=["admin"])
 
@@ -46,11 +45,11 @@ async def init_session(
 async def get_total_items(
     request: SessionInfo,
     background_tasks: BackgroundTasks,
-    metadata_repo: MetadataRepository | DatabaseRepository=Depends(get_metadata_repository),
+    database_repo: DatabaseRepository=Depends(get_database_repository),
 ) -> Dict[str, int]:
     """Get total number of items in a collection."""
     try:
-        total_items = metadata_repo.get_total_items(request.collection)
+        total_items = database_repo.get_total_items(request.collection)
 
         # Log the request
         background_tasks.add_task(
@@ -72,11 +71,11 @@ async def get_filters(
     session: str,
     collection: str,
     background_tasks: BackgroundTasks,
-    metadata_repo: MetadataRepository | DatabaseRepository=Depends(get_metadata_repository),
+    database_repo: DatabaseRepository=Depends(get_database_repository),
 ) -> List[Dict[str, Any]]:
     """Get available filter definitions for a collection"""
     try:
-        filters = metadata_repo.get_filters(collection) or []
+        filters = database_repo.get_filters(collection) or []
 
         # Log the request
         background_tasks.add_task(
@@ -92,26 +91,28 @@ async def get_filters(
 
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-@router.get("/info/filters/values/{session}/{collection}/{tagtype_id}/{filter_id}")
+@router.get("/info/filters/values/{session}/{collection}/{tagtypeId}/{tagsetId}")
 async def get_filter_values(
     session: str,
     collection: str,
-    tagtype_id: int,
-    filter_id: int,
+    tagtypeId: int,
+    tagsetId: int,
     background_tasks: BackgroundTasks,
-    metadata_repo: MetadataRepository | DatabaseRepository=Depends(get_metadata_repository),
-) -> Dict[str, Any]:
+    database_repo: DatabaseRepository=Depends(get_database_repository),
+) -> List[Dict[str, Any]]:
     """Get possible values for a specific filter in a collection."""
     try:
-        filter_values = metadata_repo.get_filter_values(collection, filter_id, tagtype_id)
+        filter_values = database_repo.get_filter_values(collection, tagsetId, tagtypeId)
         # Log the request
         background_tasks.add_task(
             _log_filters_values_request,
             session=session,
             collection=collection,
             filter_values=filter_values,
+            tagtypeId=tagtypeId,
+            tagsetId=tagsetId,
         )
-        return {"filter_values": filter_values}
+        return filter_values
 
     except Exception as e:
         from fastapi import HTTPException

@@ -2,8 +2,10 @@
 
 from typing import List
 
+from app.repositories.database_repository import DatabaseRepository
+
 from .base import FacetedSearchStrategy
-from ..schemas import ActiveFilters, ActiveFiltersDB
+from ..schemas import ActiveFilters
 from ..core.exceptions import SearchError
 
 
@@ -12,7 +14,7 @@ class FacetedSearchStrategy(FacetedSearchStrategy):
     Search strategy using faceted filters.
     """
 
-    def __init__(self, metadata_repository):
+    def __init__(self, metadata_repository: DatabaseRepository):
         self.metadata_repo = metadata_repository
 
     def get_strategy_name(self) -> str:
@@ -22,7 +24,7 @@ class FacetedSearchStrategy(FacetedSearchStrategy):
         self,
         collection: str,
         n: int,
-        filters: ActiveFilters | ActiveFiltersDB,
+        filters: ActiveFilters,
     ) -> List[int]:
         """Execute aggregated search using Reciprocal Rank Fusion."""
         try:
