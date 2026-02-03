@@ -4,9 +4,8 @@ from typing import Dict, List, Tuple, Any
 
 from app.core.config import ConfigManager
 from app.repositories.database_repository import DatabaseRepository
-from app.repositories.metadata_repository import MetadataRepository
 
-from ..schemas import ItemRequest, IsExcludedRequest
+from ..schemas import ItemDetailRequest, ItemRequest, IsExcludedRequest
 from ..core.exceptions import DatabaseError
 
 
@@ -80,21 +79,14 @@ class ItemService:
 
     def is_item_excluded(self, request: IsExcludedRequest) -> Dict[str, bool]:
         """Check if an item is in an excluded group."""
-        collection = request.session_info.collection
-
-        # Get the item's related items
-        item_related = self.get_related_items(
-            ItemRequest(itemId=request.itemId, session_info=request.session_info)
-        )["related"]
-        item_related_set = set(item_related)
 
         # Check against all excluded items
         for excluded_id in request.excluded_ids:
             excluded_related = self.get_related_items(
-                ItemRequest(itemId=excluded_id, session_info=request.session_info)
+                ItemRequest(mediaId=excluded_id, session_info=request.session_info)
             )["related"]
 
-            if request.itemId in excluded_related:
+            if request.mediaId in excluded_related:
                 return {"excludedOrNot": True}
 
         return {"excludedOrNot": False}
