@@ -10,7 +10,7 @@ from app.repositories.database_repository import DatabaseRepository
 
 from .base import RFSearchStrategy
 from .clip_search import CLIPSearchStrategy
-from ..schemas import ActiveFiltersDB
+from ..schemas import ActiveFilters
 from ..core.exceptions import SearchError
 
 
@@ -37,7 +37,7 @@ class RFSearchStrategy(RFSearchStrategy):
         n: int,
         seen: List[int],
         excluded: List[int],
-        filters: Optional[ActiveFiltersDB] = None,
+        filters: Optional[ActiveFilters] = None,
         query: Optional[str] = None,
     ) -> List[int]:
         """Execute relevance feedback search using SVM."""
@@ -95,7 +95,7 @@ class RFSearchStrategy(RFSearchStrategy):
         query: Optional[str],
         seen: List[int],
         excluded: List[int],
-        filters: Optional[ActiveFiltersDB],
+        filters: Optional[ActiveFilters],
     ) -> np.ndarray:
         """Prepare positive samples, including pseudo RF from query if available."""
         positive_samples = list(pos)
@@ -166,7 +166,7 @@ class RFSearchStrategy(RFSearchStrategy):
         n: int,
         seen_set: set,
         excluded_set: set,
-        filters: Optional[ActiveFiltersDB],
+        filters: Optional[ActiveFilters],
     ) -> List[int]:
         """Search with expanding radius until sufficient results."""
         active_n = n
