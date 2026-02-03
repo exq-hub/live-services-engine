@@ -1,11 +1,11 @@
 from typing import Any, Dict, List, Tuple, Union, Optional
 
-from app.schemas import ActiveFiltersDB, DBRangeConstraint, DBValueConstraint, FilterExpr, FilterGroup, FilterLeaf
+from app.schemas import ActiveFilters, DBRangeConstraint, DBValueConstraint, FilterExpr, FilterGroup, FilterLeaf
 
 def placeholders(n: int) -> str:
     return ",".join("?" for _ in range(n))
 
-def compile_active_filters(active: ActiveFiltersDB, tagtype_map: Dict[int, str]) -> Tuple[str, List[Any]]:
+def compile_active_filters(active: ActiveFilters, tagtype_map: Dict[int, str]) -> Tuple[str, List[Any]]:
     """
     Args:
         active: selected filters rrepresented as an ActiveFiltersDB instance (dict) with shape {"root": FilterExpr}

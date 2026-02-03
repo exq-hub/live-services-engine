@@ -6,7 +6,7 @@ filtering, and item information structures.
 """
 
 from __future__ import annotations
-from typing import List, Literal, Optional, Union, Tuple
+from typing import Literal, Optional, Union, Tuple
 from pydantic import BaseModel, Field
 
 class AddOrRemoveModelRequest(BaseModel):
@@ -75,20 +75,6 @@ class AppliedFilter(BaseModel):
     values: list[int]
 
 
-class ActiveFilters(BaseModel):
-    """Model for managing multiple active filters in search operations.
-
-    Attributes:
-        names: List of filter names that are currently active
-        values: List of lists containing integer values for each filter
-        treat_values_as_and: Optional list of filter names to treat with AND logic
-    """
-
-    name: list[str]
-    values: list[list[int]]
-    treat_values_as_and: Optional[list[str]] = []
-
-
 class DBValueConstraint(BaseModel):
     value_ids: list[int]
     operator: Literal["AND", "OR"] = "OR"
@@ -117,7 +103,7 @@ class FilterLeaf(BaseModel):
 
 FilterExpr = Union[FilterLeaf, FilterGroup]
 
-class ActiveFiltersDB(BaseModel):
+class ActiveFilters(BaseModel):
     """Model for managing multiple active filters in search operations."""
     root: FilterExpr
 
@@ -141,7 +127,7 @@ class RFSearchRequest(BaseModel):
     n: int
     seen: list[int]
     query: Optional[str] = None
-    filters: Optional[ActiveFilters | ActiveFiltersDB] = None
+    filters: Optional[ActiveFilters] = None
     excluded: list[int]
     session_info: SessionInfo
 
@@ -156,7 +142,7 @@ class FacetedSearchRequest(BaseModel):
     """
 
     n: int
-    filters: ActiveFilters | ActiveFiltersDB
+    filters: ActiveFilters
     session_info: SessionInfo
 
 
@@ -175,7 +161,7 @@ class TextSearchRequest(BaseModel):
     text: str
     n: int
     seen: Optional[list[int]] = []
-    filters: Optional[ActiveFilters | ActiveFiltersDB] = None
+    filters: Optional[ActiveFilters] = None
     excluded: Optional[list[int]] = []
     session_info: SessionInfo
 
@@ -196,7 +182,7 @@ class AggregationSearchRequest(BaseModel):
     texts: list[str]
     n: int
     seen: Optional[list[int]] = []
-    filters: Optional[ActiveFilters | ActiveFiltersDB] = None
+    filters: Optional[ActiveFilters] = None
     excluded: Optional[list[int]] = []
     session_info: SessionInfo
     RF: Optional[Tuple[list[int], list[int]]] = None
@@ -206,12 +192,23 @@ class ItemRequest(BaseModel):
     """Request model for retrieving information about a specific item.
 
     Attributes:
-        itemId: Unique identifier for the item to retrieve
+        mediaId: Unique identifier for the item to retrieve
         session_info: Session context information
     """
 
-    itemId: int
-    filter_ids: Optional[list[int]] = []
+    mediaId: int
+    session_info: SessionInfo
+
+class ItemDetailRequest(BaseModel):
+    """
+    Request tagset/filter values for a given media_id/item_id and its group.
+    Attributes:
+        mediaId: Unique identifier for the item to retrieve
+        filterIds: List of tagset/filter IDs to apply to the item
+        session_info: Session context information
+    """
+    mediaId: int
+    filterIds: list[int] = []
     session_info: SessionInfo
 
 
@@ -260,34 +257,3 @@ class ClearItemSetRequest(BaseModel):
     modelId: int
     name: str
 
-
-class Filter(BaseModel):
-    """Model representing a filter that can be applied to search results.
-
-    Filter types are enumerated as:
-    - Single (0): Single value selection
-    - Multi: Multiple value selection
-    - NumberRange: Numeric range filtering
-    - NumberMultiRange: Multiple numeric ranges
-    - LabelRange: Label-based range filtering
-    - LabelMultiRange: Multiple label ranges
-    - Count: Count-based filtering
-    - MultiCount: Multiple count criteria
-
-    Attributes:
-        id: Unique identifier for the filter
-        collectionId: ID of the collection this filter applies to
-        name: Human-readable name of the filter
-        values: List of possible filter values (strings or integers)
-        filterType: Integer representing the filter type (see enum above)
-        range: Optional range specification as [start, end] or [valueId, label]
-        count: Optional list of count constraints as [min, max] pairs
-    """
-
-    id: int
-    collectionId: int
-    name: str
-    values: list[str] | list[int]
-    filterType: int
-    range: Optional[Union[List[int], List[Union[str, int]]]] = []
-    count: Optional[list[int]] = []
