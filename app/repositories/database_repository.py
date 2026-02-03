@@ -352,6 +352,84 @@ class DatabaseRepository:
             if cursor:
                 cursor.close()
 
+    def get_related_items_with_metadata(
+        self,
+        collection: str,
+        group_id: int,
+        filters: List[int]=[]
+    ) -> Optional[List[Dict[int, Any]]]:
+        """Retrieve related items for the specified collection.
+
+        Args:
+            collection: Name of the collection
+
+        Returns:
+            Cached related items for a specific item
+        """
+        cursor = None
+        if not filters:
+            return self.get_related_items(collection=collection, group_id=group_id)
+
+        try:
+            # print('Getting related items with metadata...', group_id, filters)
+            cursor = self._db_connection[collection].cursor() 
+            related_items = {}
+            query = f"""
+                    SELECT m.id as media_id,
+                           tgs.tag_id, 
+                           ts.id as tagset_id,
+                           ts.name as tagset_name, 
+                           tt.description as tagtype
+                    FROM medias m
+                    JOIN taggings tgs ON m.id = tgs.media_id
+                    JOIN tags t ON tgs.tag_id = t.id
+                    JOIN tagsets ts ON t.tagset_id = ts.id
+                    JOIN tag_types tt ON ts.tagtype_id = tt.id
+                    WHERE m.group_id = ?
+                    AND ts.id IN ({','.join(['?'] * len(filters))}) 
+                    ORDER BY media_id, tagset_id
+                    """
+
+            if self._db_type[collection] == 'sqlite':
+                tag_info = pd.read_sql_query(
+                    query,
+                    self._db_connection[collection],
+                    params=[group_id] + filters
+                )
+            elif self._db_type[collection] == 'duckdb':
+                tag_info = cursor.execute(query, [group_id] + filters).fetchdf()
+
+            # Collapse rows into one per tagset, collecting tag IDs and metadata
+            grouped = (
+                tag_info.groupby(['media_id', 'tagset_name'])
+                    .agg(
+                        tag_ids = ('tag_id', list),
+                        tagtype = ('tagtype', 'first'),
+                    )
+                    .reset_index()
+            )
+            for row in grouped.itertuples():
+                related_items.setdefault(row.media_id, {})
+                tag_ids_placeholder = ",".join(['?'] * len(row.tag_ids))
+                tag_values = cursor.execute(
+                    f"""
+                    SELECT value 
+                    FROM {row.tagtype}_tags
+                    WHERE id IN ({tag_ids_placeholder})
+                    """,
+                    row.tag_ids
+                ).fetchall()
+                if len(tag_values) > 1:
+                    related_items[row.media_id][row.tagset_name] = [value[0] for value in tag_values]
+                else:
+                    related_items[row.media_id][row.tagset_name] = tag_values[0][0]
+            return related_items
+        except Exception as e:
+            raise DatabaseError(f"Failed to retrieve related items for {group_id} from {collection}: {e}") 
+        finally:
+            if cursor:
+                cursor.close()
+
 
     def get_item(
         self,
