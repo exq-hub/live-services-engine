@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 from collections.abc import Set
 from pathlib import Path
-import re
 from typing import List, Tuple
 import numpy as np
 
@@ -30,7 +29,7 @@ class BaseIndex(ABC):
     @abstractmethod
     def search(
         self, query: np.ndarray | int, k: int, skip_ids: Set[int] = set()
-    ) -> Tuple[int, List[int]]:
+    ) -> Tuple[int, List[int], List[float]]:
         """
         Search for the top k items to the given query vector or query id if using query states.
         Returns a query id and list of the top k items.
@@ -41,7 +40,7 @@ class BaseIndex(ABC):
     @abstractmethod
     def incremental_search(
         self, query: np.ndarray | int, k: int, skip_ids: Set[int] = set(), resume: bool = False
-    ) -> Tuple[int, List[int]]:
+    ) -> Tuple[int, List[int], List[float]]:
         """
         Search for the top k items to the given query vector or query id if using query states.
         Returns a query id and list of the top k items.
@@ -81,7 +80,7 @@ class ZarrIndex(BaseIndex):
         if isinstance(self.index, zarr.Group):
             self.index = self.index["embeddings"]
 
-    def search(self, query: np.ndarray, k: int, skip_ids: Set[int] = set()) -> Tuple[int, List[int]]:
+    def search(self, query: np.ndarray, k: int, skip_ids: Set[int] = set()) -> Tuple[int, List[int], List[float]]:
         if isinstance(query, int):
             raise ValueError("ZarrIndex does not support query by state id.")
 
@@ -118,7 +117,7 @@ class ZarrIndex(BaseIndex):
         arg_sorted_dists = np.argsort(total_top_dists)[::-1]
         top_k = arg_sorted_dists[mask[arg_sorted_dists]][:k].tolist()
 
-        return -1, top_k
+        return -1, top_k, total_top_dists[top_k].tolist()
         
     def incremental_search(
         self, 
@@ -138,7 +137,10 @@ class FaissIndex(BaseIndex):
 
     def load_index(self, model_path: Path):
         self.index = faiss.read_index(str(model_path))
-        if isinstance(self.index, faiss.IndexIVF):
+        if isinstance(self.index, faiss.IndexIVF) or (
+            isinstance(self.index, faiss.IndexPreTransform) and 
+            isinstance(faiss.downcast_index(self.index.index), faiss.IndexIVF)
+        ):
             self.index_type = 'ivf'
         elif isinstance(self.index, faiss.IndexHNSW):
             self.index_type = 'hnsw'
@@ -151,15 +153,15 @@ class FaissIndex(BaseIndex):
             if self.index.hnsw.efSearch < 100:
                 self.index.hnsw.efSearch = 100 # set a reasonable default since faiss default is 16
 
-    def search(self, query: np.ndarray, k: int, skip_ids: Set[int] = set()) -> Tuple[int, List]:
+    def search(self, query: np.ndarray, k: int, skip_ids: Set[int] = set()) -> Tuple[int, List[int], List[float]]:
         if isinstance(query, int):
             raise ValueError("FaissIndex does not support query by state id.")
 
         if skip_ids:
             return self.incremental_search(query, k, skip_ids)
 
-        _, top_k = self.index.search(query.reshape(1, -1), k)
-        return -1, top_k[0]
+        distances, top_k = self.index.search(query.reshape(1, -1), k)
+        return -1, top_k[0].tolist(), distances[0].tolist()
 
     def incremental_search(self, query: np.ndarray, k: int, skip_ids: Set[int] = set(), resume: bool = False):
         cnt = 0
@@ -184,4 +186,5 @@ class FaissIndex(BaseIndex):
                         break
             curr_k = curr_k * 2
         top_k = [r[0] for r in res]
-        return -1, top_k
+        distances = [r[1] for r in res]
+        return -1, top_k, distances
