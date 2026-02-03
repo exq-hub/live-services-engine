@@ -1,6 +1,5 @@
 """Repository for managing search indices."""
 
-import faiss
 import zarr
 import compress_pickle as cp
 from pathlib import Path
@@ -165,10 +164,8 @@ class IndexRepository:
             raise IndexError(f"CLIP index not loaded for collection: {collection}")
 
         try:
-            _, indices = index.search(query_vector, k, skip_ids=skip_ids)
-            return indices
-            # q_id, indices = index.search(q_id, query_vector, k)
-            # return q_id, indices
+            _, indices, distances = index.search(query_vector, k, skip_ids=skip_ids)
+            return indices, distances
         except Exception as e:
             raise IndexError(f"CLIP search failed for collection {collection}: {e}")
 
@@ -183,8 +180,8 @@ class IndexRepository:
             raise IndexError(f"Caption index not loaded for collection: {collection}")
 
         try:
-            _, indices = index.search(query_vector, k, skip_ids=skip_ids)
-            return indices
+            _, indices, distances = index.search(query_vector, k, skip_ids=skip_ids)
+            return indices, distances
         except Exception as e:
             raise IndexError(f"Caption search failed for collection {collection}: {e}")
 
