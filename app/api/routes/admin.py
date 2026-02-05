@@ -7,10 +7,9 @@ from fastapi import APIRouter, BackgroundTasks, Depends
 from app.repositories.database_repository import DatabaseRepository
 
 from ...schemas import (
+    ClientEventRequest,
     SessionInfo,
     AddOrRemoveModelRequest,
-    AppliedFilter,
-    ClearItemSetRequest,
 )
 from ..dependencies import get_database_repository, get_config_manager
 
@@ -154,105 +153,15 @@ async def log_remove_model(
     return {"status": "Logged successfully"}
 
 
-@router.post("/log/applyFilters")
-async def log_apply_filters(
-    request: AppliedFilter,
+@router.post("/log/clientEvent")
+async def log_client_event(
+    request: List[ClientEventRequest],
     background_tasks: BackgroundTasks,
 ) -> Dict[str, str]:
-    """Log filter application."""
+    """Log a generic client event."""
     background_tasks.add_task(
-        _log_filter_operation,
-        action="Log Apply Filters",
-        session=request.session_info.session,
-        model_id=request.session_info.modelId,
-        collection=request.session_info.collection,
-        filter_data={
-            "FilterName": request.name,
-            "FilterValues": request.values,
-            "body": request.model_dump_json(),
-        },
-    )
-    return {"status": "Logged successfully"}
-
-
-@router.post("/log/resetFilters")
-async def log_reset_filters(
-    request: SessionInfo,
-    background_tasks: BackgroundTasks,
-) -> Dict[str, str]:
-    """Log filter reset."""
-    background_tasks.add_task(
-        _log_filter_operation,
-        action="Log Reset Filters",
-        session=request.session,
-        model_id=request.modelId,
-        collection=request.collection,
-        filter_data={"body": request.model_dump_json()},
-    )
-    return {"status": "Logged successfully"}
-
-
-@router.post("/log/clearExcludedGroups")
-async def clear_all_excluded(
-    request: SessionInfo,
-    background_tasks: BackgroundTasks,
-) -> Dict[str, str]:
-    """Log clearing of excluded groups."""
-    background_tasks.add_task(
-        _log_clear_operation,
-        action="Cleared the excluded groups list",
-        session=request.session,
-        model_id=request.modelId,
-        body_json=request.model_dump_json(),
-    )
-    return {"status": "Logged successfully"}
-
-
-@router.post("/log/clearItemSet")
-async def clear_item_set(
-    request: ClearItemSetRequest,
-    background_tasks: BackgroundTasks,
-) -> Dict[str, str]:
-    """Log item set clearing."""
-    background_tasks.add_task(
-        _log_clear_operation,
-        action=f"Cleared items from {request.name}",
-        session=request.session,
-        model_id=request.modelId,
-        body_json=request.model_dump_json(),
-        additional_data={"name": request.name},
-    )
-    return {"status": "Logged successfully"}
-
-
-@router.post("/log/clearRFModel")
-async def clear_rf_model(
-    request: SessionInfo,
-    background_tasks: BackgroundTasks,
-) -> Dict[str, str]:
-    """Log RF model clearing."""
-    background_tasks.add_task(
-        _log_clear_operation,
-        action="Cleared RF Model",
-        session=request.session,
-        model_id=request.modelId,
-        body_json=request.model_dump_json(),
-    )
-    return {"status": "Logged successfully"}
-
-
-@router.post("/log/clearConversation")
-async def clear_conversation(
-    request: SessionInfo,
-    background_tasks: BackgroundTasks,
-) -> Dict[str, str]:
-    """Log conversation clearing."""
-    background_tasks.add_task(
-        _log_clear_operation,
-        action="Cleared Conversation",
-        session=request.session,
-        model_id=request.modelId,
-        body_json=request.model_dump_json(),
+        _log_client_event,
+        events=request
     )
     return {"status": "Logged successfully"}
 
@@ -265,7 +174,8 @@ async def _log_session_init(session: str, collections: list):
     log_message = {
         "timestamp": get_current_timestamp(),
         "action": "Initialize Exquisitor LSE Session",
-        "data": {"session": session, "collections": collections},
+        "session": session,
+        "display_attrs": {"session": session, "collections": collections},
     }
 
     dump_log_msgpack(log_message, "./logs/admin.log")
@@ -278,7 +188,8 @@ async def _log_total_items_request(session: str, collection: str, total_items: i
     log_message = {
         "timestamp": get_current_timestamp(),
         "action": "Initialize Exquisitor LSE Session",
-        "data": {
+        "session": session,
+        "display_attrs": {
             "session": session,
             "collection": collection,
             "total_items": total_items,
@@ -295,7 +206,8 @@ async def _log_filters_request(session: str, collection: str, filters: list[Dict
     log_message = {
         "timestamp": get_current_timestamp(),
         "action": "Get filter definitions for collection request",
-        "data": {
+        "session": session,
+        "display_attrs": {
             "session": session,
             "collection": collection,
             "filters": filters,
@@ -305,17 +217,20 @@ async def _log_filters_request(session: str, collection: str, filters: list[Dict
     dump_log_msgpack(log_message, "./logs/admin.log")
 
 
-async def _log_filters_values_request(session: str, collection: str, filter_values: list[Dict[str, Any]]):
+async def _log_filters_values_request(session: str, collection: str, filter_values: list[Dict[str, Any]], tagtypeId: int, tagsetId: int):
     """Background task to log total items request."""
     from ...utils import dump_log_msgpack, get_current_timestamp
 
     log_message = {
         "timestamp": get_current_timestamp(),
-        "action": "Get filter definitions for collection request",
-        "data": {
+        "action": "Get filter values for collection request",
+        "session": session,
+        "display_attrs": {
             "session": session,
             "collection": collection,
             "filter_values": filter_values,
+            "tagtypeId": tagtypeId,
+            "tagsetId": tagsetId,
         },
     }
 
@@ -343,55 +258,22 @@ async def _log_model_operation(
     dump_log_msgpack(log_message, "./logs/admin.log")
 
 
-async def _log_filter_operation(
-    action: str,
-    session: str,
-    model_id: int,
-    collection: str,
-    filter_data: Dict[str, Any],
-):
-    """Background task to log filter operations."""
+async def _log_client_event(events: List[ClientEventRequest]):
+    """Background task to log client events."""
     from ...utils import dump_log_msgpack, get_current_timestamp
 
-    log_message = {
-        "timestamp": get_current_timestamp(),
-        "session": session,
-        "action": action,
-        "display_attrs": {
-            "session": session,
-            "modelId": model_id,
-            "collection": collection,
-            **{k: v for k, v in filter_data.items() if k != "body"},
-        },
-        "body": filter_data.get("body", ""),
-    }
+    for event in events:
+        display_attrs = {
+            "session": event.session,
+            "element_id": event.element_id,
+            "route": event.route,
+        }
+        log_message = {
+            "timestamp": get_current_timestamp(),
+            "session": event.session,
+            "action": f"Client Event: {event.action}",
+            "display_attrs": display_attrs,
+            "body": event.data,
+        }
 
-    dump_log_msgpack(log_message, "./logs/admin.log")
-
-
-async def _log_clear_operation(
-    action: str,
-    session: str,
-    model_id: int,
-    body_json: str,
-    additional_data: Dict[str, Any] = None,
-):
-    """Background task to log clear operations."""
-    from ...utils import dump_log_msgpack, get_current_timestamp
-
-    display_attrs = {
-        "session": session,
-        "modelId": model_id,
-    }
-    if additional_data:
-        display_attrs.update(additional_data)
-
-    log_message = {
-        "timestamp": get_current_timestamp(),
-        "session": session,
-        "action": action,
-        "display_attrs": display_attrs,
-        "body": body_json,
-    }
-
-    dump_log_msgpack(log_message, "./logs/admin.log")
+        dump_log_msgpack(log_message, "./logs/admin.log")
