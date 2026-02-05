@@ -37,6 +37,7 @@ async def clip_search(
                 if request.filters
                 else None,
                 "excluded": request.excluded or [],
+                "n_requested": request.n
             },
             suggestions=result["suggestions"],
             request_timestamp=result["request_timestamp"],
@@ -75,6 +76,7 @@ async def caption_search(
                 if request.filters
                 else None,
                 "excluded": request.excluded or [],
+                "n_requested": request.n
             },
             suggestions=result["suggestions"],
             request_timestamp=result["request_timestamp"],
@@ -114,6 +116,7 @@ async def aggregate_search(
                 else None,
                 "excluded": request.excluded or [],
                 "rrf_k": 60,  # RRF constant
+                "n_requested": request.n
             },
             suggestions=result["suggestions"],
             request_timestamp=result["request_timestamp"],
@@ -154,6 +157,7 @@ async def rf_search(
                 else None,
                 "excluded": request.excluded,
                 "query": request.query,
+                "n_requested": request.n
             },
             suggestions=result["suggestions"],
             request_timestamp=result["request_timestamp"],
@@ -186,7 +190,8 @@ async def faceted_search(
             model_id=request.session_info.modelId,
             collection=request.session_info.collection,
             query_data={
-                "filters": request.filters.model_dump_json()
+                "filters": request.filters.model_dump_json(),
+                "n_requested": request.n
             },
             suggestions=result["suggestions"],
             request_timestamp=result["request_timestamp"],

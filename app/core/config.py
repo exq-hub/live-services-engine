@@ -15,6 +15,7 @@ class CollectionConfig(BaseModel):
 
     enabled: bool = Field(..., description="Whether this collection is enabled")
     clip_index: str = Field(..., description="Path to CLIP index file")
+    clip_index_type: str = Field(..., description="Type of CLIP index (faiss, zarr, etc.)")
     clip_manifest_file: str = Field(..., description="Path to CLIP manifest file")
     database_file: str = Field(..., description="Path to database file")
     metadata_file: str = Field(..., description="Path to metadata file")
@@ -25,13 +26,17 @@ class CollectionConfig(BaseModel):
 
     # Optional fields
     caption_index: Optional[str] = Field(None, description="Path to caption index file")
-    caption_manifest_file: str = Field(..., description="Path to caption manifest file")
+    caption_index_type: Optional[str] = Field(None, description="Type of caption index (faiss, zarr, etc.)")
+    caption_manifest_file: Optional[str] = Field(None, description="Path to caption manifest file")
     caption_shot_mapping_file: Optional[str] = Field(
         None, description="Path to caption shot mapping"
     )
     segment_duration: Optional[float] = Field(
         None, description="Segment duration for captions"
     )
+    transcript_index: Optional[str] = Field(None, description="Path to transcript index file")
+    transcript_index_type: Optional[str] = Field(None, description="Type of transcript index (faiss, zarr, etc.)")
+    transcript_manifest_file: Optional[str] = Field(None, description="Path to transcript manifest file")
     pca_model: Optional[str] = Field(None, description="Path to PCA model file")
     std_scaler: Optional[str] = Field(None, description="Path to standard scaler file")
     pca_embeddings_file: Optional[str] = Field(
@@ -128,6 +133,7 @@ class ConfigManager:
                     "enabled": True,
                     "clip_index": section["CLIPIndex"],
                     "clip_manifest_file": section["CLIPManifestFile"],
+                    "clip_index_type": section.get("CLIPIndexType", "faiss"),
                     "database_file": section["DatabaseFile"],
                     "metadata_file": section["MetadataFile"],
                     "filters_file": section["FiltersFile"],
@@ -139,9 +145,13 @@ class ConfigManager:
                 # Add optional fields
                 optional_mappings = {
                     "CaptionIndex": "caption_index",
+                    "CaptionIndexType": "caption_index_type",
                     "CaptionManifestFile": "caption_manifest_file",
                     "CaptionShotMappingFile": "caption_shot_mapping_file",
                     "SegmentDuration": "segment_duration",
+                    "TranscriptIndex": "transcript_index",
+                    "TranscriptIndexType": "transcript_index_type",
+                    "TranscriptManifestFile": "transcript_manifest_file",
                     "PCAModel": "pca_model",
                     "StdScaler": "std_scaler",
                     "PCAEmbeddingsFile": "pca_embeddings_file",
