@@ -1,7 +1,7 @@
 """Base classes for search strategies."""
 
 from abc import ABC, abstractmethod
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional
 
 from ..schemas import ActiveFilters, ActiveFiltersDB
 
@@ -65,7 +65,7 @@ class TextSearchStrategy(SearchStrategy):
         n: int,
         seen: List[int],
         excluded: List[int],
-        filters: Optional[ActiveFilters] = None,
+        filters: Optional[ActiveFilters |ActiveFiltersDB] = None,
     ) -> List[int]:
         """Execute a text-based search and return matching item indices.
 
