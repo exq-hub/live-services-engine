@@ -314,7 +314,6 @@ class ApplicationContainer:
             # Load metadata
             if isinstance(metadata_repo, DatabaseRepository):
                 metadata_repo.load_database(collection, collection_config.database_file)
-                metadata_repo.map_manifest_to_db(collection, collection_config.clip_manifest_file)
             else:
                 metadata_repo.load_metadata(collection, collection_config.metadata_file)
                 metadata_repo.load_filters(collection, collection_config.filters_file)
