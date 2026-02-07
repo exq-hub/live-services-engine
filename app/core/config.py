@@ -16,7 +16,6 @@ class CollectionConfig(BaseModel):
     enabled: bool = Field(..., description="Whether this collection is enabled")
     clip_index: str = Field(..., description="Path to CLIP index file")
     clip_index_type: str = Field(..., description="Type of CLIP index (faiss, zarr, etc.)")
-    clip_manifest_file: str = Field(..., description="Path to CLIP manifest file")
     database_file: str = Field(..., description="Path to database file")
     filters_file: str = Field(..., description="Path to filters file")
     related_items_file: str = Field(..., description="Path to related items file")
@@ -24,6 +23,7 @@ class CollectionConfig(BaseModel):
     original_media_url: str = Field(..., description="Base URL for original media")
 
     # Optional fields
+    clip_manifest_file: Optional[str] = Field(None, description="Path to CLIP manifest file")
     caption_index: Optional[str] = Field(None, description="Path to caption index file")
     caption_index_type: Optional[str] = Field(None, description="Type of caption index (faiss, zarr, etc.)")
     caption_manifest_file: Optional[str] = Field(None, description="Path to caption manifest file")
@@ -40,7 +40,8 @@ class CollectionConfig(BaseModel):
         "./logs/", description="Directory for log files"
     )
 
-    @validator("clip_index", "database_file", "clip_manifest_file",
+
+    @validator("clip_index", "database_file",
                "filters_file", "related_items_file")
     def validate_required_files(cls, v):
         if not os.path.exists(v):
@@ -125,7 +126,7 @@ class ConfigManager:
                 config_dict = {
                     "enabled": True,
                     "clip_index": section["CLIPIndex"],
-                    "clip_manifest_file": section["CLIPManifestFile"],
+                    "clip_manifest_file": section.get("CLIPManifestFile"),
                     "clip_index_type": section.get("CLIPIndexType", "faiss"),
                     "database_file": section["DatabaseFile"],
                     "filters_file": section["FiltersFile"],

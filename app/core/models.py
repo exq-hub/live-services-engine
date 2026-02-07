@@ -221,9 +221,15 @@ class ApplicationContainer:
             logger.info(f"Loading artifacts for collection: {collection}")
             collection_config = config.collection_configs[collection]
 
-            # Load database
-            database_repo.load_database(collection, collection_config.database_file)
-            database_repo.map_manifest_to_db(collection, collection_config.clip_manifest_file)
+            # Load metadata
+            if isinstance(metadata_repo, DatabaseRepository):
+                metadata_repo.load_database(collection, collection_config.database_file)
+            else:
+                metadata_repo.load_metadata(collection, collection_config.metadata_file)
+                metadata_repo.load_filters(collection, collection_config.filters_file)
+                metadata_repo.load_related_items(
+                    collection, collection_config.related_items_file
+                )
 
             # Load indices
             index_repo.load_clip_index(
