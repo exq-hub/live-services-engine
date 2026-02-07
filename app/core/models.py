@@ -222,14 +222,7 @@ class ApplicationContainer:
             collection_config = config.collection_configs[collection]
 
             # Load metadata
-            if isinstance(metadata_repo, DatabaseRepository):
-                metadata_repo.load_database(collection, collection_config.database_file)
-            else:
-                metadata_repo.load_metadata(collection, collection_config.metadata_file)
-                metadata_repo.load_filters(collection, collection_config.filters_file)
-                metadata_repo.load_related_items(
-                    collection, collection_config.related_items_file
-                )
+            database_repo.load_database(collection, collection_config.database_file)
 
             # Load indices
             index_repo.load_clip_index(
