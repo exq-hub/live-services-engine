@@ -2,52 +2,56 @@
 
 from fastapi import Depends
 
-from ..core.models import container
+from app.core.config import ConfigManager
+from app.repositories.database_repository import DatabaseRepository
+from app.repositories.index_repository import IndexRepository
+
+from ..core.models import ApplicationContainer, ModelManager, container
 from ..services.search_service import SearchService
 from ..services.item_service import ItemService
 from ..services.logging_service import LoggingService, AuditLogger
 
 
-def get_container():
+def get_container() -> ApplicationContainer:
     """Get the application container."""
     return container
 
 
-def get_config_manager(app_container=Depends(get_container)):
+def get_config_manager(app_container: ApplicationContainer=Depends(get_container)) -> ConfigManager:
     """Get the configuration manager."""
     return app_container.config_manager
 
-
-def get_model_manager(app_container=Depends(get_container)):
+    
+def get_model_manager(app_container: ApplicationContainer=Depends(get_container)) -> ModelManager:
     """Get the model manager."""
     return app_container.model_manager
 
 
-def get_metadata_repository(app_container=Depends(get_container)):
-    """Get the metadata repository."""
-    return app_container.metadata_repository
+def get_database_repository(app_container: ApplicationContainer=Depends(get_container)) -> DatabaseRepository:
+    """Get the database repository."""
+    return app_container.database_repository
 
 
-def get_index_repository(app_container=Depends(get_container)):
+def get_index_repository(app_container: ApplicationContainer=Depends(get_container)) -> IndexRepository:
     """Get the index repository."""
     return app_container.index_repository
 
 
 def get_search_service(
-    model_manager=Depends(get_model_manager),
-    index_repo=Depends(get_index_repository),
-    metadata_repo=Depends(get_metadata_repository),
+    model_manager: ModelManager=Depends(get_model_manager),
+    index_repo: IndexRepository=Depends(get_index_repository),
+    database_repo: DatabaseRepository=Depends(get_database_repository),
 ) -> SearchService:
     """Get the search service."""
-    return SearchService(model_manager, index_repo, metadata_repo)
+    return SearchService(model_manager, index_repo, database_repo)
 
 
 def get_item_service(
-    metadata_repo=Depends(get_metadata_repository),
-    config_manager=Depends(get_config_manager),
+    database_repo: DatabaseRepository=Depends(get_database_repository),
+    config_manager: ConfigManager=Depends(get_config_manager),
 ) -> ItemService:
     """Get the item service."""
-    return ItemService(metadata_repo, config_manager)
+    return ItemService(database_repo, config_manager)
 
 
 def get_logging_service() -> LoggingService:

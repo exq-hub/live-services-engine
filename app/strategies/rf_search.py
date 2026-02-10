@@ -7,12 +7,10 @@ from sklearn.linear_model import SGDClassifier
 from numpy.random import default_rng
 
 from app.repositories.database_repository import DatabaseRepository
-from app.repositories.metadata_repository import MetadataRepository
 
 from .base import RFSearchStrategy
 from .clip_search import CLIPSearchStrategy
 from ..schemas import ActiveFilters
-from ..search_utils import check_active_filters
 from ..core.exceptions import SearchError
 
 
@@ -152,15 +150,12 @@ class RFSearchStrategy(RFSearchStrategy):
         if not excluded:
             return set()
 
-        excluded_set = set()
-        metadata = self.metadata_repo.get_metadata(collection)
-        related_items = self.metadata_repo.get_related_items(collection)
-
-        if metadata and related_items:
-            for exc in excluded:
-                if exc < len(metadata["items"]):
-                    item_id = metadata["items"][exc]["item_id"].split("_")[0]
-                    excluded_set.update(related_items.get(item_id, []))
+        excluded_set = set(excluded)
+        metadata_repo: DatabaseRepository = self.metadata_repo
+        for exc in excluded:
+            item = metadata_repo.get_item(collection, exc)
+            related = metadata_repo.get_related_items(collection, item['group'])
+            excluded_set.update(related)
 
         return excluded_set
 
@@ -176,44 +171,27 @@ class RFSearchStrategy(RFSearchStrategy):
         """Search with expanding radius until sufficient results."""
         active_n = n
         total_items = self.metadata_repo.get_total_items(collection)
-        if filters and isinstance(self.metadata_repo, DatabaseRepository):
+        skip_ids = set()
+        if len(seen_set) != 0:
+            skip_ids.update(self.metadata_repo.get_index_ids(collection, list(seen_set), index='clip'))
+        if len(excluded_set) != 0:
+            skip_ids.update(self.metadata_repo.get_index_ids(collection, list(excluded_set), index='clip'))
+
+        if filters:
             passed_ids = []
             passed_ids = self.metadata_repo.get_filtered_media_ids(
                 collection, filters
             )
-        elif isinstance(self.metadata_repo, MetadataRepository):
-            metadata = self.metadata_repo.get_metadata(collection)
-            collection_filters = self.metadata_repo.get_filters(collection)
+            # NOTE: Can use the size of passed_ids to determine if index search is needed
+            #       If it is lower than a certain threshold we can search through the subset with
+            #       the zarr embeddings array directly
+            index_passed_ids = self.metadata_repo.get_index_ids(collection, passed_ids, index='clip')
+            index_skip_ids = set(range(total_items)) - set(index_passed_ids)
+            skip_ids.update(index_skip_ids)
 
+        indices, _ = self.index_repo.search_clip(
+            collection, hyperplane, active_n, skip_ids=skip_ids
+        )
+        suggestions = self.metadata_repo.get_media_ids(collection, indices)
 
-        while True:
-            last = active_n >= total_items
-
-            # Search using hyperplane
-            _, indices = self.index_repo.search_clip(collection, hyperplane, active_n)
-
-            mapped_indices = indices[0].tolist()
-            if isinstance(self.metadata_repo, DatabaseRepository):
-                mapped_indices = self.metadata_repo.get_media_ids(collection, mapped_indices)
-
-            # Filter results
-            suggestions = []
-            for idx in mapped_indices:
-                if idx not in seen_set and idx not in excluded_set:
-                    if (
-                        filters is None
-                        or (isinstance(self.metadata_repo, DatabaseRepository) and idx in passed_ids)
-                        or (isinstance(self.metadata_repo, MetadataRepository)
-                            and check_active_filters(metadata["items"][idx], filters, collection_filters)
-                        )
-                    ):
-                        suggestions.append(idx)
-
-            # Check if we have enough results
-            if len(suggestions) >= n:
-                return suggestions[:n]
-            elif last:
-                return suggestions
-
-            # Expand search radius
-            active_n = min(active_n * 2, total_items)
+        return suggestions

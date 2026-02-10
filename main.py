@@ -10,7 +10,6 @@ from app.core.models import container
 from app.core.exceptions import LSEException, ConfigurationError
 from app.api.routes import search, items, admin
 from app.repositories.database_repository import DatabaseRepository
-from app.repositories.metadata_repository import MetadataRepository
 from app.services.logging_service import AuditLogger, LoggingService
 
 # Configure logging

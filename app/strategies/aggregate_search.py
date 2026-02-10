@@ -13,12 +13,12 @@ from ..core.exceptions import SearchError
 class AggregateSearchStrategy(TextSearchStrategy):
     """Search strategy that aggregates multiple search methods using RRF."""
 
-    def __init__(self, model_manager, index_repository, metadata_repository):
+    def __init__(self, model_manager, index_repository, database_repository):
         self.clip_search = CLIPSearchStrategy(
-            model_manager, index_repository, metadata_repository
+            model_manager, index_repository, database_repository
         )
         self.caption_search = CaptionSearchStrategy(
-            model_manager, index_repository, metadata_repository
+            model_manager, index_repository, database_repository
         )
         self.rrf_k = 60  # RRF constant
 

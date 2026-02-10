@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
-from ..schemas import ActiveFilters, ActiveFiltersDB
+from ..schemas import ActiveFilters
 
 
 class SearchStrategy(ABC):
@@ -65,7 +65,7 @@ class TextSearchStrategy(SearchStrategy):
         n: int,
         seen: List[int],
         excluded: List[int],
-        filters: Optional[ActiveFilters |ActiveFiltersDB] = None,
+        filters: Optional[ActiveFilters] = None,
     ) -> List[int]:
         """Execute a text-based search and return matching item indices.
 
@@ -100,7 +100,7 @@ class RFSearchStrategy(SearchStrategy):
         n: int,
         seen: List[int],
         excluded: List[int],
-        filters: Optional[ActiveFilters | ActiveFiltersDB] = None,
+        filters: Optional[ActiveFilters] = None,
         query: Optional[str] = None,
     ) -> List[int]:
         """Execute a relevance feedback search and return matching item indices.
@@ -132,7 +132,7 @@ class FacetedSearchStrategy(SearchStrategy):
     async def search(
         self,
         collection: str,
-        filters: ActiveFilters | ActiveFiltersDB,
+        filters: ActiveFilters,
         n: int,
     ) -> List[int]:
         """Execute a relevance feedback search and return matching item indices.

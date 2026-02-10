@@ -9,11 +9,9 @@ import numpy as np
 from app.core.models import ModelManager
 from app.repositories.database_repository import DatabaseRepository
 from app.repositories.index_repository import IndexRepository
-from app.repositories.metadata_repository import MetadataRepository
 
 from .base import TextSearchStrategy
-from ..schemas import ActiveFilters, ActiveFiltersDB
-from ..search_utils import check_active_filters
+from ..schemas import ActiveFilters
 from ..core.exceptions import SearchError
 
 
@@ -24,10 +22,10 @@ class CLIPSearchStrategy(TextSearchStrategy):
         self, 
         model_manager: ModelManager,
         index_repository: IndexRepository, 
-        metadata_repository: MetadataRepository | DatabaseRepository):
+        database_repository: DatabaseRepository):
         self.model_manager = model_manager
         self.index_repo = index_repository
-        self.metadata_repo = metadata_repository
+        self.database_repo = database_repository
 
     def get_strategy_name(self) -> str:
         return "CLIP Search"
@@ -39,7 +37,7 @@ class CLIPSearchStrategy(TextSearchStrategy):
         n: int,
         seen: List[int],
         excluded: List[int],
-        filters: Optional[ActiveFilters | ActiveFiltersDB] = None,
+        filters: Optional[ActiveFilters] = None,
         # state: Optional[int] = None,
     ) -> List[int]:
         """Execute CLIP text search."""
@@ -107,17 +105,15 @@ class CLIPSearchStrategy(TextSearchStrategy):
         if not excluded:
             return set()
 
-        excluded_set = set()
-        metadata = self.metadata_repo.get_metadata(collection)
-        related_items = self.metadata_repo.get_related_items(collection)
-
-        if metadata and related_items:
-            for exc in excluded:
-                if exc < len(metadata["items"]):
-                    item_id = metadata["items"][exc]["item_id"].split("_")[0]
-                    excluded_set.update(related_items.get(item_id, []))
+        excluded_set = set(excluded)
+        database_repo: DatabaseRepository = self.database_repo
+        for exc in excluded:
+            item = database_repo.get_item(collection, exc)
+            related = database_repo.get_related_items(collection, item['group'])
+            excluded_set.update(related)
 
         return excluded_set
+
 
     async def _search_with_expansion(
         self,
@@ -126,32 +122,32 @@ class CLIPSearchStrategy(TextSearchStrategy):
         n: int,
         seen_set: set,
         excluded_set: set,
-        filters: Optional[ActiveFilters | ActiveFiltersDB] = None,
+        filters: Optional[ActiveFilters] = None,
     ) -> List[int]:
         """Search with expanding radius until sufficient results."""
         active_n = n
-        total_items = self.metadata_repo.get_total_items(collection)
+        total_items = self.database_repo.get_total_items(collection)
         skip_ids = set()
         if len(seen_set) != 0:
-            skip_ids.update(self.metadata_repo.get_index_ids(collection, list(seen_set), index='clip'))
+            skip_ids.update(self.database_repo.get_index_ids(collection, list(seen_set), index='clip'))
         if len(excluded_set) != 0:
-            skip_ids.update(self.metadata_repo.get_index_ids(collection, list(excluded_set), index='clip'))
+            skip_ids.update(self.database_repo.get_index_ids(collection, list(excluded_set), index='clip'))
 
         if filters:
             passed_ids = []
-            passed_ids = self.metadata_repo.get_filtered_media_ids(
+            passed_ids = self.database_repo.get_filtered_media_ids(
                 collection, filters
             )
             # NOTE: Can use the size of passed_ids to determine if index search is needed
             #       If it is lower than a certain threshold we can search through the subset with
             #       the zarr embeddings array directly
-            index_passed_ids = self.metadata_repo.get_index_ids(collection, passed_ids, index='clip')
+            index_passed_ids = self.database_repo.get_index_ids(collection, passed_ids, index='clip')
             index_skip_ids = set(range(total_items)) - set(index_passed_ids)
             skip_ids.update(index_skip_ids)
 
-        indices = self.index_repo.search_clip(
+        indices, _ = self.index_repo.search_clip(
             collection, text_features, active_n, skip_ids=skip_ids
         )
-        suggestions = self.metadata_repo.get_media_ids(collection, indices)
+        suggestions = self.database_repo.get_media_ids(collection, indices)
 
         return suggestions

@@ -129,7 +129,7 @@ def submit(body: SubmitRequest, shared=Depends(get_shared_resources)):
         "action": "DRES Response",
         "display_attrs": {"status_code": result.status_code, "response": result.json()},
     }
-    # dump_log_msgpack(result_log_message, shared.logfile)
+    dump_log_msgpack(result_log_message, 'logs/dres.log')
 
     return result.json()
 
