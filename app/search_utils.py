@@ -14,7 +14,7 @@ from typing import Dict, List
 
 import numpy as np
 
-from app.schemas import ActiveFilters, Filter, ItemInfo
+from app.schemas import ActiveFilters, ItemInfo
 
 # centroids = []
 # cluster_datapoint_idxs = []
@@ -23,7 +23,7 @@ from app.schemas import ActiveFilters, Filter, ItemInfo
 
 
 def check_active_filters(
-    item: ItemInfo, active_filters: ActiveFilters, filters: dict[str, Filter]
+    item: ItemInfo, active_filters: ActiveFilters, filters: dict[str, dict]
 ) -> bool:
     """Check if an item passes all active filter criteria.
 
@@ -101,7 +101,7 @@ def index_search(
     cluster_datapoint_idxs: np.ndarray,
     total_items: int,
     metadata: list[ItemInfo],
-    filters: dict[str, Filter],
+    filters: dict[str, dict],
     related: dict[str, list[int]],
 ) -> List[int]:
     """Search an Inverted File (IVF) index with clustering for efficient retrieval.

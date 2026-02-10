@@ -17,9 +17,6 @@ class CollectionConfig(BaseModel):
     clip_index: str = Field(..., description="Path to CLIP index file")
     clip_index_type: str = Field(..., description="Type of CLIP index (faiss, zarr, etc.)")
     database_file: str = Field(..., description="Path to database file")
-    metadata_file: str = Field(..., description="Path to metadata file")
-    filters_file: str = Field(..., description="Path to filters file")
-    related_items_file: str = Field(..., description="Path to related items file")
     thumbnail_media_url: str = Field(..., description="Base URL for thumbnails")
     original_media_url: str = Field(..., description="Base URL for original media")
 
@@ -28,12 +25,6 @@ class CollectionConfig(BaseModel):
     caption_index: Optional[str] = Field(None, description="Path to caption index file")
     caption_index_type: Optional[str] = Field(None, description="Type of caption index (faiss, zarr, etc.)")
     caption_manifest_file: Optional[str] = Field(None, description="Path to caption manifest file")
-    caption_shot_mapping_file: Optional[str] = Field(
-        None, description="Path to caption shot mapping"
-    )
-    segment_duration: Optional[float] = Field(
-        None, description="Segment duration for captions"
-    )
     transcript_index: Optional[str] = Field(None, description="Path to transcript index file")
     transcript_index_type: Optional[str] = Field(None, description="Type of transcript index (faiss, zarr, etc.)")
     transcript_manifest_file: Optional[str] = Field(None, description="Path to transcript manifest file")
@@ -47,8 +38,8 @@ class CollectionConfig(BaseModel):
         "./logs/", description="Directory for log files"
     )
 
-    @validator("clip_index", "database_file",
-               "metadata_file", "filters_file", "related_items_file")
+
+    @validator("clip_index", "database_file")
     def validate_required_files(cls, v):
         if not os.path.exists(v):
             raise ValueError(f"Required file does not exist: {v}")
@@ -135,9 +126,6 @@ class ConfigManager:
                     "clip_manifest_file": section.get("CLIPManifestFile"),
                     "clip_index_type": section.get("CLIPIndexType", "faiss"),
                     "database_file": section["DatabaseFile"],
-                    "metadata_file": section["MetadataFile"],
-                    "filters_file": section["FiltersFile"],
-                    "related_items_file": section["RelatedItemsFile"],
                     "thumbnail_media_url": section["ThumbnailMediaURL"],
                     "original_media_url": section["OriginalMediaURL"],
                 }

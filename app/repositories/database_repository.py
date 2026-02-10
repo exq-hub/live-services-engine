@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from app.repositories import db_helper
-from app.schemas import ActiveFiltersDB
+from app.schemas import ActiveFilters
 
 from ..core.exceptions import DatabaseError
 
@@ -160,7 +160,7 @@ class DatabaseRepository:
                 {
                     "id": f[0],
                     "name": f[1],
-                    "tagtype_id": f[2],
+                    "tagtypeId": f[2],
                     "tagtype": f[3] 
                 }
                 for f in rows
@@ -246,7 +246,7 @@ class DatabaseRepository:
         cursor: sqlite3.Connection,
         media_id: int, 
         collection: str,
-        filters: List[str]=[],
+        filters: List[int]=[],
         index: str='clip'
     ) -> Dict[str, Any]:
         """Retrieve metadata for a specific media item.
@@ -310,7 +310,8 @@ class DatabaseRepository:
             )
             for row in grouped.itertuples():
                 tag_ids_placeholder = ",".join(['?'] * len(row.tag_ids))
-                tag_values = cursor.execute(f"""
+                tag_values = cursor.execute(
+                    f"""
                     SELECT value 
                     FROM {row.tagtype}_tags
                     WHERE id IN ({tag_ids_placeholder})
@@ -323,10 +324,10 @@ class DatabaseRepository:
                     metadata[row.tagset_name] = tag_values[0][0]
             return metadata
         except Exception as e:
-            raise DatabaseError(f"Failed to retrieve metadata for media {media_id}: {e}")
+            raise DatabaseError(f"Failed to retrieve media metadata for media {media_id}: {e}")
 
 
-    def get_related_items(self, collection: str, item_id: int) -> Optional[List[int]]:
+    def get_related_items(self, collection: str, group_id: int) -> Optional[List[int]]:
         """Retrieve related items for the specified collection.
 
         Args:
@@ -344,15 +345,93 @@ class DatabaseRepository:
                     """
                     SELECT id
                     FROM medias
-                    WHERE group_id = (SELECT group_id FROM medias WHERE id = ?)
+                    WHERE group_id = ?
                     """,
-                    [item_id]
+                    [group_id]
                 ).fetchall()
                 if rows:
                     related_items = [row[0] for row in rows]
             return related_items
         except Exception as e:
-            raise DatabaseError(f"Failed to retrieve related items for {item_id} from {collection}: {e}") 
+            raise DatabaseError(f"Failed to retrieve related items for {group_id} from {collection}: {e}") 
+        finally:
+            if cursor:
+                cursor.close()
+
+    def get_related_items_with_metadata(
+        self,
+        collection: str,
+        group_id: int,
+        filters: List[int]=[]
+    ) -> Optional[List[Dict[int, Any]]]:
+        """Retrieve related items for the specified collection.
+
+        Args:
+            collection: Name of the collection
+
+        Returns:
+            Cached related items for a specific item
+        """
+        cursor = None
+        if not filters:
+            return self.get_related_items(collection=collection, group_id=group_id)
+
+        try:
+            # print('Getting related items with metadata...', group_id, filters)
+            cursor = self._db_connection[collection].cursor() 
+            related_items = {}
+            query = f"""
+                    SELECT m.id as media_id,
+                           tgs.tag_id, 
+                           ts.id as tagset_id,
+                           ts.name as tagset_name, 
+                           tt.description as tagtype
+                    FROM medias m
+                    JOIN taggings tgs ON m.id = tgs.media_id
+                    JOIN tags t ON tgs.tag_id = t.id
+                    JOIN tagsets ts ON t.tagset_id = ts.id
+                    JOIN tag_types tt ON ts.tagtype_id = tt.id
+                    WHERE m.group_id = ?
+                    AND ts.id IN ({','.join(['?'] * len(filters))}) 
+                    ORDER BY media_id, tagset_id
+                    """
+
+            if self._db_type[collection] == 'sqlite':
+                tag_info = pd.read_sql_query(
+                    query,
+                    self._db_connection[collection],
+                    params=[group_id] + filters
+                )
+            elif self._db_type[collection] == 'duckdb':
+                tag_info = cursor.execute(query, [group_id] + filters).fetchdf()
+
+            # Collapse rows into one per tagset, collecting tag IDs and metadata
+            grouped = (
+                tag_info.groupby(['media_id', 'tagset_name'])
+                    .agg(
+                        tag_ids = ('tag_id', list),
+                        tagtype = ('tagtype', 'first'),
+                    )
+                    .reset_index()
+            )
+            for row in grouped.itertuples():
+                related_items.setdefault(row.media_id, {})
+                tag_ids_placeholder = ",".join(['?'] * len(row.tag_ids))
+                tag_values = cursor.execute(
+                    f"""
+                    SELECT value 
+                    FROM {row.tagtype}_tags
+                    WHERE id IN ({tag_ids_placeholder})
+                    """,
+                    row.tag_ids
+                ).fetchall()
+                if len(tag_values) > 1:
+                    related_items[row.media_id][row.tagset_name] = [value[0] for value in tag_values]
+                else:
+                    related_items[row.media_id][row.tagset_name] = tag_values[0][0]
+            return related_items
+        except Exception as e:
+            raise DatabaseError(f"Failed to retrieve related items for {group_id} from {collection}: {e}") 
         finally:
             if cursor:
                 cursor.close()
@@ -362,7 +441,7 @@ class DatabaseRepository:
         self,
         collection: str,
         media_id: int,
-        filters: list[int]=[]
+        filters: List[int]=[]
     ) -> Optional[Dict[str, Any]]:
         """Retrieve a specific item's metadata by its ID.
 
@@ -382,61 +461,33 @@ class DatabaseRepository:
             media_info = cursor.execute(
                 """
                 SELECT m.source,
-                       m.group_id,
-                       m2.source as group_src
+                       m.source_type,
+                       m.thumbnail_uri,
+                       m.group_id
                 FROM medias m
-                JOIN medias m2 ON m2.id = m.group_id
                 WHERE m.id = ?
                 """, 
                 [media_id]
             ).fetchone()
             # TODO Consider renaming fields for clarity 
-            item['thumbnail_uri'] = media_info[0]
-            item['group'] = media_info[1]
-            item['media_uri'] = media_info[2]
-            item['metadata'] = \
-                self.get_media_metadata(
-                    cursor, 
-                    media_id,
-                    collection,
-                    filters
-                )
+            item['media_uri'] = media_info[0]
+            item['source_type'] = media_info[1]
+            item['thumbnail_uri'] = media_info[2]
+            item['group'] = media_info[3]
+            if filters:
+                item['metadata'] = \
+                    self.get_media_metadata(
+                        cursor, 
+                        media_id,
+                        collection,
+                        filters
+                    )
             return item
         except Exception as e:
-            raise DatabaseError(f"Failed to retrieve metadata for item {media_id}: {e}")
+            raise DatabaseError(f"Failed to retrieve item data ({media_id}): {e}")
         finally:
             if cursor:
                 cursor.close()
-
-
-    def get_group(
-        self,
-        collection: str,
-        group_id: int,
-        filters: list[int]=[]
-    ) -> Optional[Dict[str, Any]]:
-        """Retrieve a specific group's metadata by its ID.
-
-        Args:
-            collection: Name of the collection
-            group_id: Media ID of the group
-
-        Returns:
-            Group metadata dictionary or None if not found
-        """
-        cursor = None
-        try:
-            cursor = self._db_connection[collection].cursor()
-            group_info = \
-                self.get_media_metadata(
-                    cursor, 
-                    group_id,
-                    collection,
-                    filters
-                )
-            return group_info
-        except Exception as e:
-            raise DatabaseError(f"Failed to retrieve group {group_id} from {collection}: {e}")
 
 
     def get_total_items(self, collection: str, index='clip') -> int:
@@ -569,12 +620,12 @@ class DatabaseRepository:
             if cursor:
                 cursor.close()
 
-    def get_filtered_media_ids(self, collection: str, filters: ActiveFiltersDB) -> set:
+    def get_filtered_media_ids(self, collection: str, filters: ActiveFilters) -> set:
         """Retrieve item IDs that pass the specified active filters.
         
         Args:
             collection: Name of the collection
-            filters: ActiveFiltersDB object specifying filter criteria
+            filters: ActiveFilters object specifying filter criteria
         Returns:
             Set of item IDs that pass the filters
         """
