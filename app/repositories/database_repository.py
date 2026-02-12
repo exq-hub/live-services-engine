@@ -80,34 +80,6 @@ class DatabaseRepository:
             raise DatabaseError(f"Failed to load database from {db_path}: {e}")
 
 
-    def map_manifest_to_db(
-        self,
-        collection: str,
-        manifest_file: str=None,
-        index: str='clip'
-    ) -> None:
-        """Create item to datapoint mapping with the provided manifest file.
-
-        Args:
-            collection: Name of the collection to load metadata for
-            manifest_file: Text file listing file paths of datapoints in order
-        Raises:
-            DatabaseError: If mapping fails
-        """
-        try:
-            if index == 'clip':
-                source_type = 1 
-            elif index == 'caption':
-                source_type = 4
-            (
-                self._item_datapoint_mapping_cache[collection][index],
-                self._rev_item_datapoint_mapping_cache[collection][index]
-            ) = \
-                self.create_item_to_datapoint_mapping(collection, manifest_file, source_type)
-        except Exception as e:
-            raise DatabaseError(f"Failed to map manifest {manifest_file}: {e}")
-
-    
     def is_loaded(self, collection: str) -> bool:
         """Check if the database for the specified collection is loaded.
 
@@ -504,122 +476,6 @@ class DatabaseRepository:
         except Exception as e:
             raise DatabaseError(f"Failed to get total items for collection {collection}: {e}")
 
-    def get_text_source_with_nearest_keyframes(self, collection:str, index:str, suggestions: List[int]) -> List[Dict[str, Any]]:
-        """
-        Get source for suggestions along with their nearest keyframe
-        """
-        cursor = None
-        try:
-            if index not in ['caption', 'transcript']:
-                raise DatabaseError(f"Index must be 'caption' or 'transcript', got {index}")
-
-            media_ids = self.get_media_ids(collection, suggestions, index)
-            if len(media_ids) != len(suggestions):
-                raise DatabaseError(f"Returned media_ids do not match the amount of provided list")
-
-            cursor = self._db_connection[collection].cursor()
-            ph = ",".join("?" * len(suggestions))
-            closest_kf_ts_id = cursor.execute(
-                "SELECT id FROM tagsets WHERE name = 'Closest Keyframe'"
-            ).fetchone()
-            if closest_kf_ts_id is not None:
-                closest_kf_ts_id = closest_kf_ts_id[0]
-                texts = cursor.execute(
-                    f"""
-                    SELECT tgs.media_id, at.value as text
-                    FROM taggings tgs
-                    JOIN alphanumerical_tags at ON at.id = tgs.tag_id
-                    WHERE at.tagset_id = (SELECT id FROM tagsets WHERE name = ?)
-                    AND tgs.media_id IN ({ph})
-                    ORDER BY tgs.media_id
-                    """,
-                    [index.capitalize()] + media_ids
-                ).fetchall()
-                closest_kf_ids = cursor.execute(
-                    f"""
-                    SELECT tgs.media_id, nit.value as closest_kf_id
-                    FROM taggings tgs
-                    JOIN numerical_int_tags nit ON nit.id = tgs.tag_id
-                    WHERE nit.tagset_id = ?
-                    AND   tgs.media_id IN ({ph})
-                    ORDER BY tgs.media_id
-                    """,
-                    [closest_kf_ts_id] + media_ids
-                ).fetchall()
-
-                if len(texts) != len(suggestions) or len(closest_kf_ids) != len(suggestions):
-                    raise DatabaseError(f"Returned texts or closest keyframe IDs do not match the amount of provided suggestions")
-
-                results = []
-                for text_row, kf_row in zip(texts, closest_kf_ids):
-                    if text_row[0] != kf_row[0]:
-                        raise DatabaseError(f"Text and closest keyframe ID rows do not match for media IDs {media_ids}")
-                    results.append({'text': text_row[1], 'media_id': kf_row[1]})
-                return results
-                
-            # if no closest keyframe tagset exists for index, calculate based on 'Start (sec)' tagset
-            start_sec_tagset_id = cursor.execute("SELECT id FROM tagsets WHERE name = 'Start (sec)'").fetchone()[0]
-            text_rows = cursor.execute(
-                f"""
-                SELECT m.id, m.group_id, at.value as text 
-                FROM medias m
-                JOIN taggings tgs ON m.id = tgs.media_id
-                JOIN alphanumerical_tags at ON tgs.tag_id = at.id
-                WHERE m.id IN ({ph})
-                AND   at.tagset_id = (SELECT id FROM tagsets WHERE name = ?)
-                ORDER BY m.id
-                """,
-                media_ids + [index.capitalize()]
-            ).fetchall()
-            start_secs = cursor.execute(
-                f"""
-                SELECT m.id, nit.value as start_sec
-                FROM medias m
-                JOIN taggings tgs ON m.id = tgs.media_id
-                JOIN numerical_int_tags nit ON tgs.tag_id = nit.id
-                WHERE m.id IN ({ph})
-                AND   nit.tagset_id = ?
-                ORDER BY m.id
-                """,
-                media_ids + [start_sec_tagset_id]
-            ).fetchall()
-
-            results = []
-            for (text_row, start_row) in zip(text_rows, start_secs):
-                if text_row[0] != start_row[0]:
-                    raise DatabaseError(f"Text and start time rows do not match for media IDs {media_ids}")
-                grp_id = text_row[1]
-                text = text_row[2]
-                txt_start_sec = start_row[3]
-                # Pick the keyframe with the smallest absolute difference to the start time of the text
-                closest_keyframe = cursor.execute(
-                    f"""
-                    SELECT m.id, ABS(nit.value - $1) as abs_difference
-                    FROM medias m
-                    JOIN taggings tgs ON m.id = tgs.media_id
-                    JOIN numerical_int_tags nit ON tgs.tag_id = nit.id
-                    WHERE source_type = 1   -- Image
-                    AND m.group_id = $2     -- Video
-                    AND nit.tagset_id = $3  -- Start (sec) ID
-                    ORDER BY abs_difference ASC, nit.value ASC -- On ties choose the earlier time keyframe
-                    LIMIT 1
-                    """,
-                    [txt_start_sec, grp_id, start_sec_tagset_id]
-                ).fetchone()
-
-                if closest_keyframe is None:
-                    raise DatabaseError("Could not determine closest keyframe through tagsets")
-
-                results.append({'text': text, 'media_id': closest_keyframe[0]})
-            return results
-        except Exception as e:
-            raise DatabaseError(
-                f"Failed to get nearest keyframes for text suggestions {collection, suggestions}: {e}"
-            )
-        finally:
-            if cursor:
-                cursor.close()
-
     def get_filtered_media_ids(self, collection: str, filters: ActiveFilters) -> set:
         """Retrieve item IDs that pass the specified active filters.
         
@@ -645,7 +501,7 @@ class DatabaseRepository:
                 cursor.close()
 
 
-    def create_item_to_datapoint_mapping(self, collection: str, source_type: int=1, index='clip') -> Dict[str, int]:
+    def create_item_to_datapoint_mapping(self, collection: str, source_type: int=1) -> Dict[str, int]:
         """Create a mapping from item IDs to their datapoint indices.
 
         This is useful for converting between item identifiers and their
@@ -672,14 +528,7 @@ class DatabaseRepository:
                     [source_type])
                 mapping = {}
                 rev_mapping = {}
-                # Determine tagset ID based on index type
-                ts_id = None
-                if index == 'clip':
-                    ts_id = cursor.execute("SELECT id FROM tagsets WHERE name = 'CLIP Index ID'").fetchone()
-                elif index == 'caption':
-                    ts_id = cursor.execute("SELECT id FROM tagsets WHERE name = 'Caption Index ID'").fetchone()
-                elif index == 'transcript':
-                    ts_id = cursor.execute("SELECT id FROM tagsets WHERE name = 'Transcript Index ID'").fetchone()
+                ts_id = cursor.execute("SELECT id FROM tagsets WHERE name = 'CLIP Index ID'").fetchone()
 
                 if ts_id is not None:
                     # Fetch mapping from numerical_int_tags

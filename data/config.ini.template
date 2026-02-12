@@ -2,8 +2,8 @@
 # Device for running models: auto, cpu, cuda, mps, or cuda:N
 ModelDevice = auto
 
-# Comma-separated list of collection names
-Collections = collection1, collection2
+# Base log directory (can be overridden per collection)
+LogDirectory = ./logs/
 
 [SERVER]
 # Server host and port settings
@@ -17,49 +17,21 @@ Level = INFO
 
 # ============================================================================
 # COLLECTION CONFIGURATIONS
+# Add a section for each collection. Set Enabled = True to activate it.
 # ============================================================================
 
 [collection1]
-# Enable or disable this collection
 Enabled = True
 
-# Required files
-CLIPIndex = ./data/collection1/clip_index.npy
-MetadataFile = ./data/collection1/metadata.json
-FiltersFile = ./data/collection1/filters.json
-RelatedItemsFile = ./data/collection1/related_items.json
+# --- Required ---
+CLIPIndex = ./data/collection1/clip_index.zarr
+CLIPIndexType = zarr
+DatabaseFile = ./data/collection1/collection1.db
+ThumbnailMediaURL = https://localhost:5001/collection1
+OriginalMediaURL = https://localhost:5001/collection1
 
-# Media URLs
-ThumbnailMediaURL = https://example.com/thumbnails/
-OriginalMediaURL = https://example.com/originals/
+# --- Optional: Relevance feedback embeddings ---
+# EmbeddingsFile = ./data/collection1/embeddings.zarr
 
-# Optional: Caption search functionality
-CaptionIndex = ./data/collection1/caption_index.npy
-CaptionShotMappingFile = ./data/collection1/caption_mapping.json
-SegmentDuration = 2.0
-
-# Optional: PCA-based search
-PCAModel = ./data/collection1/pca_model.pkl
-StdScaler = ./data/collection1/std_scaler.pkl
-PCAEmbeddingsFile = ./data/collection1/pca_embeddings.npy
-EmbeddingsFile = ./data/collection1/embeddings.npy
-
-# Optional: Logging
-LogDirectory = ./logs/collection1/
-
-[collection2]
-# Enable or disable this collection
-Enabled = False
-
-# Required files
-CLIPIndex = ./data/collection2/clip_index.npy
-MetadataFile = ./data/collection2/metadata.json
-FiltersFile = ./data/collection2/filters.json
-RelatedItemsFile = ./data/collection2/related_items.json
-
-# Media URLs
-ThumbnailMediaURL = https://example.com/collection2/thumbnails/
-OriginalMediaURL = https://example.com/collection2/originals/
-
-# Optional: Logging
-LogDirectory = ./logs/collection2/
+# --- Optional: Logging ---
+# LogDirectory = ./logs/collection1/
