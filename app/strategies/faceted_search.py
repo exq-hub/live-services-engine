@@ -26,7 +26,7 @@ class FacetedSearchStrategy(FacetedSearchStrategy):
         n: int,
         filters: ActiveFilters,
     ) -> List[int]:
-        """Execute aggregated search using Reciprocal Rank Fusion."""
+        """Execute faceted search using filters."""
         try:
             passed_ids = self.metadata_repo.get_filtered_media_ids(collection, filters)
             return passed_ids[:n]
