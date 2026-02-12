@@ -5,10 +5,8 @@ from typing import Dict, List
 
 from ..strategies.base import SearchStrategy, TextSearchStrategy, RFSearchStrategy, FacetedSearchStrategy
 from ..strategies.clip_search import CLIPSearchStrategy
-from ..strategies.caption_search import CaptionSearchStrategy
 from ..strategies.rf_search import RFSearchStrategy as RFSearchImpl
 from ..strategies.faceted_search import FacetedSearchStrategy as FacetedSearchImpl
-from ..strategies.aggregate_search import AggregateSearchStrategy
 from ..schemas import FacetedSearchRequest, TextSearchRequest, RFSearchRequest
 from ..core.exceptions import SearchError
 
@@ -26,13 +24,7 @@ class SearchService:
             "clip": CLIPSearchStrategy(
                 model_manager, index_repository, metadata_repository
             ),
-            "caption": CaptionSearchStrategy(
-                model_manager, index_repository, metadata_repository
-            ),
             "rf": RFSearchImpl(model_manager, index_repository, metadata_repository),
-            "aggregate": AggregateSearchStrategy(
-                model_manager, index_repository, metadata_repository
-            ),
             "faceted": FacetedSearchImpl(
                 metadata_repository
             )
@@ -156,11 +148,4 @@ class SearchService:
 
     def is_strategy_available(self, strategy_name: str, collection: str) -> bool:
         """Check if a strategy is available for a collection."""
-        if strategy_name not in self.strategies:
-            return False
-
-        # Check strategy-specific availability
-        if strategy_name == "caption":
-            return self.index_repo.get_caption_index(collection) is not None
-
-        return True
+        return strategy_name in self.strategies

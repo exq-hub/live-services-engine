@@ -13,30 +13,17 @@ from .exceptions import ConfigurationError
 class CollectionConfig(BaseModel):
     """Configuration for a single collection."""
 
-    enabled: bool = Field(..., description="Whether this collection is enabled")
     clip_index: str = Field(..., description="Path to CLIP index file")
     clip_index_type: str = Field(..., description="Type of CLIP index (faiss, zarr, etc.)")
     database_file: str = Field(..., description="Path to database file")
     thumbnail_media_url: str = Field(..., description="Base URL for thumbnails")
     original_media_url: str = Field(..., description="Base URL for original media")
 
-    # Optional fields
-    clip_manifest_file: Optional[str] = Field(None, description="Path to CLIP manifest file")
-    caption_index: Optional[str] = Field(None, description="Path to caption index file")
-    caption_index_type: Optional[str] = Field(None, description="Type of caption index (faiss, zarr, etc.)")
-    caption_manifest_file: Optional[str] = Field(None, description="Path to caption manifest file")
-    transcript_index: Optional[str] = Field(None, description="Path to transcript index file")
-    transcript_index_type: Optional[str] = Field(None, description="Type of transcript index (faiss, zarr, etc.)")
-    transcript_manifest_file: Optional[str] = Field(None, description="Path to transcript manifest file")
-    pca_model: Optional[str] = Field(None, description="Path to PCA model file")
-    std_scaler: Optional[str] = Field(None, description="Path to standard scaler file")
-    pca_embeddings_file: Optional[str] = Field(
-        None, description="Path to PCA embeddings"
-    )
-    embeddings_file: Optional[str] = Field(None, description="Path to embeddings file")
-    log_directory: Optional[str] = Field(
-        "./logs/", description="Directory for log files"
-    )
+    # Optional: Relevance feedback embeddings
+    embeddings_file: Optional[str] = Field(None, description="Path to embeddings for relevance feedback")
+
+    # Optional: Logging
+    log_directory: Optional[str] = Field("./logs/", description="Directory for log files")
 
 
     @validator("clip_index", "database_file")
@@ -45,13 +32,7 @@ class CollectionConfig(BaseModel):
             raise ValueError(f"Required file does not exist: {v}")
         return v
 
-    @validator(
-        "caption_index",
-        "pca_model",
-        "std_scaler",
-        "pca_embeddings_file",
-        "embeddings_file",
-    )
+    @validator("embeddings_file")
     def validate_optional_files(cls, v):
         if v is not None and not os.path.exists(v):
             raise ValueError(f"Optional file specified but does not exist: {v}")
@@ -106,24 +87,21 @@ class ConfigManager:
 
             # Parse DEFAULT section
             default_section = parser["DEFAULT"]
-            collections = [s.strip() for s in default_section["Collections"].split(",")]
 
-            # Parse collection configurations
+            # Discover collections: any section with Enabled = True
+            # (skip reserved sections)
+            reserved_sections = {"DEFAULT", "SERVER", "LOGGING"}
             collection_configs = {}
-            for collection_name in collections:
-                if collection_name not in parser:
-                    raise ConfigurationError(
-                        f"Collection '{collection_name}' not found in config"
-                    )
+            for collection_name in parser.sections():
+                if collection_name in reserved_sections:
+                    continue
 
                 section = parser[collection_name]
                 if section.get("Enabled", "False").lower() != "true":
                     continue
 
                 config_dict = {
-                    "enabled": True,
                     "clip_index": section["CLIPIndex"],
-                    "clip_manifest_file": section.get("CLIPManifestFile"),
                     "clip_index_type": section.get("CLIPIndexType", "faiss"),
                     "database_file": section["DatabaseFile"],
                     "thumbnail_media_url": section["ThumbnailMediaURL"],
@@ -132,27 +110,13 @@ class ConfigManager:
 
                 # Add optional fields
                 optional_mappings = {
-                    "CaptionIndex": "caption_index",
-                    "CaptionIndexType": "caption_index_type",
-                    "CaptionManifestFile": "caption_manifest_file",
-                    "CaptionShotMappingFile": "caption_shot_mapping_file",
-                    "SegmentDuration": "segment_duration",
-                    "TranscriptIndex": "transcript_index",
-                    "TranscriptIndexType": "transcript_index_type",
-                    "TranscriptManifestFile": "transcript_manifest_file",
-                    "PCAModel": "pca_model",
-                    "StdScaler": "std_scaler",
-                    "PCAEmbeddingsFile": "pca_embeddings_file",
                     "EmbeddingsFile": "embeddings_file",
                     "LogDirectory": "log_directory",
                 }
 
                 for ini_key, pydantic_key in optional_mappings.items():
                     if ini_key in section:
-                        value = section[ini_key]
-                        if pydantic_key == "segment_duration":
-                            value = float(value)
-                        config_dict[pydantic_key] = value
+                        config_dict[pydantic_key] = section[ini_key]
 
                 collection_configs[collection_name] = CollectionConfig(**config_dict)
 

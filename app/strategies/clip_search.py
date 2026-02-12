@@ -52,9 +52,6 @@ class CLIPSearchStrategy(TextSearchStrategy):
             # Encode text using CLIP
             text_features = await self._encode_text(text)
 
-            # Apply PCA transformation if available
-            text_features = self._apply_pca_transform(collection, text_features)
-
             # Process exclusions
             excluded_set = self._build_excluded_set(collection, excluded)
             seen_set = set(seen)
@@ -89,16 +86,6 @@ class CLIPSearchStrategy(TextSearchStrategy):
             text_features = self.model_manager.clip_text_model(tokenized_text)
             text_features /= text_features.norm(dim=-1, keepdim=True)
             return text_features.detach().cpu().numpy()
-
-    def _apply_pca_transform(self, collection: str, features: np.ndarray) -> np.ndarray:
-        """Apply PCA transformation if available."""
-        pca_data = self.index_repo.get_pca_data(collection)
-        if pca_data:
-            scaler = pca_data["scaler"]
-            pca_model = pca_data["model"]
-            scaled_features = scaler.transform(features)
-            return pca_model.transform(scaled_features)
-        return features
 
     def _build_excluded_set(self, collection: str, excluded: List[int]) -> set:
         """Build set of excluded items including related items."""
