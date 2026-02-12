@@ -162,7 +162,6 @@ async def health_check():
             "collections": collections,
             "models_loaded": {
                 "clip": True,
-                "caption": True,
             },
         }
 

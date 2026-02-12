@@ -8,7 +8,6 @@ from typing import Optional
 
 import torch
 import open_clip
-from sentence_transformers import SentenceTransformer
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
@@ -47,7 +46,6 @@ class ModelManager:
         self._device: Optional[torch.device] = None
         self._clip_text_model: Optional[torch.nn.Module] = None
         self._clip_text_tokenizer = None
-        self._caption_embedding_model: Optional[SentenceTransformer] = None
 
     @property
     def device(self) -> torch.device:
@@ -70,21 +68,11 @@ class ModelManager:
             self._clip_text_tokenizer = self._load_clip_text_tokenizer()
         return self._clip_text_tokenizer
 
-    @property
-    def caption_embedding_model(self) -> SentenceTransformer:
-        """Get the caption embedding model."""
-        if self._caption_embedding_model is None:
-            self._caption_embedding_model = self._load_caption_embedding_model()
-        return self._caption_embedding_model
-
     def initialize_models(self):
         """Explicitly initialize all models during startup."""
         try:
             logger.info("Initializing CLIP text model...")
             self._clip_text_model = self._load_clip_text_model()
-
-            logger.info("Initializing caption embedding model...")
-            self._caption_embedding_model = self._load_caption_embedding_model()
 
             logger.info("Initializing CLIP tokenizer...")
             self._clip_text_tokenizer = self._load_clip_text_tokenizer()
@@ -145,18 +133,6 @@ class ModelManager:
             return open_clip.get_tokenizer("ViT-SO400M-14-SigLIP-384")
         except Exception as e:
             raise ModelLoadError(f"Failed to load CLIP tokenizer: {e}")
-
-    @timer_decorator
-    def _load_caption_embedding_model(self) -> SentenceTransformer:
-        """Load the caption embedding model."""
-        try:
-            model = SentenceTransformer(
-                "mixedbread-ai/mxbai-embed-large-v1", device=self.device
-            )
-            model.eval()
-            return model
-        except Exception as e:
-            raise ModelLoadError(f"Failed to load caption embedding model: {e}")
 
 
 class ApplicationContainer:
@@ -230,30 +206,8 @@ class ApplicationContainer:
                 collection_config.clip_index_type
             )
 
-            if collection_config.caption_index:
-                index_repo.load_caption_index(
-                    collection, collection_config.caption_index
-                )
-            if collection_config.caption_manifest_file:
-                database_repo.map_manifest_to_db(
-                    collection, 
-                    collection_config.caption_manifest_file,
-                    index='caption'
-                )
-
-            # Load PCA data or embeddings
-            if (
-                collection_config.pca_model
-                and collection_config.std_scaler
-                and collection_config.pca_embeddings_file
-            ):
-                index_repo.load_pca_data(
-                    collection,
-                    collection_config.pca_model,
-                    collection_config.std_scaler,
-                    collection_config.pca_embeddings_file,
-                )
-            elif collection_config.embeddings_file:
+            # Load embeddings for relevance feedback
+            if collection_config.embeddings_file:
                 index_repo.set_embeddings_zarr_path(
                     collection, collection_config.embeddings_file
                 )

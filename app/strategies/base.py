@@ -44,7 +44,7 @@ class SearchStrategy(ABC):
         """Return the name identifier for this search strategy.
 
         Returns:
-            String identifier for the strategy (e.g., 'clip', 'caption', 'rf')
+            String identifier for the strategy (e.g., 'clip', 'rf')
         """
         pass
 
@@ -53,8 +53,7 @@ class TextSearchStrategy(SearchStrategy):
     """Abstract base class for text query-based search strategies.
 
     This class specializes the SearchStrategy interface for strategies
-    that accept text queries as input, such as CLIP text-to-image search
-    or caption-based text search.
+    that accept text queries as input, such as CLIP text-to-image search.
     """
 
     @abstractmethod
