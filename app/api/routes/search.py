@@ -1,4 +1,15 @@
-"""Search-related API routes."""
+"""Search endpoint route handlers.
+
+Defines three POST endpoints under ``/exq/search/``:
+
+- ``/clip`` -- CLIP text-to-image similarity search.
+- ``/rf`` -- relevance-feedback search (SVM-based).
+- ``/faceted`` -- filter-only search with no vector similarity.
+
+Each endpoint validates the incoming Pydantic request, delegates to
+`SearchService`, schedules a background audit-log task, and returns a
+``{"suggestions": [...]}`` response containing the matching media IDs.
+"""
 
 from typing import Any, Dict
 

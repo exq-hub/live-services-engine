@@ -1,4 +1,21 @@
-"""Model management and dependency injection container."""
+"""Model management and dependency injection container.
+
+This module provides two main components:
+
+`ModelManager`
+    Handles PyTorch device selection (CPU / CUDA / MPS) and lazy loading of
+    the CLIP text encoder (``ViT-SO400M-14-SigLIP-384``) and its tokenizer.
+    Models are loaded once at startup and cached for the application lifetime.
+
+`ApplicationContainer`
+    The central dependency-injection container that wires together all
+    major subsystems.  It owns singleton instances of `ConfigManager`,
+    `ModelManager`, `DatabaseRepository`, and `IndexRepository`, and
+    orchestrates their initialization in the correct order during startup.
+
+A module-level ``container`` instance is exported for use throughout the
+application (imported by route dependencies, the lifespan handler, etc.).
+"""
 
 import logging
 import time
@@ -18,7 +35,10 @@ from ..repositories.database_repository import DatabaseRepository
 from ..repositories.index_repository import IndexRepository
 
 console = Console()
+"""Rich console instance for styled terminal output."""
+
 logger = logging.getLogger(__name__)
+"""Module-level logger for model and container diagnostics."""
 
 
 def timer_decorator(func):
@@ -43,9 +63,16 @@ class ModelManager:
 
     def __init__(self, config: LSEConfig):
         self.config = config
+        """Validated LSE configuration snapshot."""
+
         self._device: Optional[torch.device] = None
+        """Lazily resolved PyTorch device (CPU, CUDA, or MPS)."""
+
         self._clip_text_model: Optional[torch.nn.Module] = None
+        """Cached CLIP text encoder (ViT-SO400M-14-SigLIP-384)."""
+
         self._clip_text_tokenizer = None
+        """Cached CLIP text tokenizer matching the text encoder."""
 
     @property
     def device(self) -> torch.device:
@@ -140,10 +167,19 @@ class ApplicationContainer:
 
     def __init__(self):
         self._config_manager: Optional[ConfigManager] = None
+        """Singleton configuration manager, created on first access."""
+
         self._model_manager: Optional[ModelManager] = None
+        """Singleton model manager, created on first access."""
+
         self._database_repo: Optional[DatabaseRepository] = None
+        """Singleton database repository for all collections."""
+
         self._index_repo: Optional[IndexRepository] = None
-        self._initialized = False
+        """Singleton index repository for all collections."""
+
+        self._initialized: bool = False
+        """Whether `initialize()` has completed successfully."""
 
     @property
     def config_manager(self) -> ConfigManager:
@@ -222,5 +258,5 @@ class ApplicationContainer:
         )
 
 
-# Global container instance
-container = ApplicationContainer()
+container: ApplicationContainer = ApplicationContainer()
+"""Global singleton container used throughout the application for dependency resolution."""

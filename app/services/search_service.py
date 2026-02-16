@@ -1,4 +1,17 @@
-"""Search service that coordinates different search strategies."""
+"""Search service -- strategy dispatcher and performance tracker.
+
+`SearchService` is the entry point for all search operations. It initialises
+the three available strategies at construction time and dispatches incoming
+requests to the correct one:
+
+- ``"clip"`` -- `CLIPSearchStrategy` for text-to-image similarity search.
+- ``"rf"`` -- `RFSearchStrategy` for SVM-based relevance feedback.
+- ``"faceted"`` -- `FacetedSearchStrategy` for filter-only retrieval.
+
+Each search call is timed (wall-clock seconds) and the result dict includes
+``request_timestamp``, ``completion_time``, and ``strategy`` metadata used
+by the route layer for audit logging.
+"""
 
 import time
 from typing import Dict, List
@@ -16,10 +29,14 @@ class SearchService:
 
     def __init__(self, model_manager, index_repository, metadata_repository):
         self.model_manager = model_manager
-        self.index_repo = index_repository
-        self.metadata_repo = metadata_repository
+        """Shared `ModelManager` providing the CLIP text encoder and device."""
 
-        # Initialize strategies
+        self.index_repo = index_repository
+        """Shared `IndexRepository` for vector nearest-neighbour lookups."""
+
+        self.metadata_repo = metadata_repository
+        """Shared `DatabaseRepository` for metadata and ID-mapping queries."""
+
         self.strategies: Dict[str, SearchStrategy] = {
             "clip": CLIPSearchStrategy(
                 model_manager, index_repository, metadata_repository
@@ -29,6 +46,7 @@ class SearchService:
                 metadata_repository
             )
         }
+        """Registry of available search strategies keyed by name (``clip``, ``rf``, ``faceted``)."""
 
     async def search_text(self, strategy_name: str, request: TextSearchRequest) -> Dict:
         """Execute text-based search using specified strategy."""

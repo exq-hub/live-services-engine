@@ -1,7 +1,26 @@
+"""Vector index abstractions for nearest-neighbour search.
+
+This module defines the `BaseIndex` abstract interface and two concrete
+implementations used by the search strategies:
+
+`FaissIndex`
+    Wraps a FAISS index file (IVF or HNSW). Supports incremental search
+    with automatic probe/efSearch expansion when the initial search scope
+    is insufficient to satisfy the requested *k* results after filtering.
+
+`ZarrIndex`
+    Performs brute-force dot-product search over Zarr-stored embeddings,
+    parallelised across CPU cores. Useful when the dataset fits in chunked
+    array storage and an approximate index is not available.
+
+Both implementations accept a ``skip_ids`` set so that already-seen,
+excluded, or filter-rejected items can be skipped without post-filtering.
+"""
+
 from abc import ABC, abstractmethod
 from collections.abc import Set
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 import numpy as np
 
 from concurrent.futures import ThreadPoolExecutor
@@ -14,9 +33,19 @@ from zarr.storage import ZipStore
 import faiss
 
 class BaseIndex(ABC):
+    """Abstract base class for all vector index backends.
+
+    Subclasses must implement `load_index`, `search`, and
+    `incremental_search`. The optional `is_query_in_state` hook enables
+    stateful/resumable search when the backend supports it.
+    """
+
     def __init__(self):
         self.index = None
-        self.query_state_support = False
+        """The loaded index object (FAISS index, Zarr array, etc.), or ``None`` if not yet loaded."""
+
+        self.query_state_support: bool = False
+        """Whether this backend supports stateful/resumable queries."""
 
     def __del__(self):
         self.close()
@@ -61,7 +90,16 @@ class BaseIndex(ABC):
 
 
 class ZarrIndex(BaseIndex):
-    """Not actually an index, just a simple dot-product search over zarr-stored embeddings."""
+    """Brute-force dot-product search over Zarr-stored embeddings.
+
+    Unlike FAISS, this does not use an approximate nearest-neighbour
+    structure. Instead, it loads embedding chunks from Zarr storage and
+    computes dot products in parallel using a thread pool. The results
+    are then globally sorted to return the top-*k* items.
+
+    Supports ``.zarr`` directories, ``.zip`` / ``.zipstore`` archives, and
+    Zarr groups containing an ``embeddings`` dataset.
+    """
 
     def __init__(self):
         super().__init__()
@@ -131,9 +169,19 @@ class ZarrIndex(BaseIndex):
     
 
 class FaissIndex(BaseIndex):
+    """FAISS-backed approximate nearest-neighbour index.
+
+    Automatically detects whether the loaded index is IVF or HNSW and
+    sets reasonable default search parameters (``nprobe = 64`` for IVF,
+    ``efSearch = 100`` for HNSW). During incremental search, these
+    parameters are doubled progressively if the initial search scope
+    cannot return enough valid results after ``skip_ids`` filtering.
+    """
+
     def __init__(self):
         super().__init__()
-        self.index_type = None
+        self.index_type: Optional[str] = None
+        """Detected FAISS index type: ``'ivf'``, ``'hnsw'``, or ``'unknown'``."""
 
     def load_index(self, model_path: Path):
         self.index = faiss.read_index(str(model_path))

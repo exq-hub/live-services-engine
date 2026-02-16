@@ -1,4 +1,33 @@
-"""Configuration management with validation."""
+"""Configuration management with Pydantic validation.
+
+Loads application settings from an INI file (default ``./data/config.ini``)
+and exposes them as validated Pydantic models. The configuration is split
+into three tiers:
+
+1. **Global defaults** -- ``[DEFAULT]`` section (e.g. ``ModelDevice``).
+2. **Server / logging** -- ``[SERVER]`` and ``[LOGGING]`` reserved sections.
+3. **Collections** -- every other section whose ``Enabled`` flag is ``True``
+   defines a media collection with its own CLIP index, database, media URLs,
+   embeddings path, and log directory.
+
+Example INI layout::
+
+    [DEFAULT]
+    ModelDevice = auto
+
+    [SERVER]
+    Host = 0.0.0.0
+    Port = 8000
+
+    [MyCollection]
+    Enabled = True
+    CLIPIndex = /data/index.faiss
+    CLIPIndexType = faiss
+    DatabaseFile = /data/db.sqlite
+    ThumbnailMediaURL = https://cdn.example.com/thumbs
+    OriginalMediaURL = https://cdn.example.com/originals
+    EmbeddingsFile = /data/embeddings.zarr
+"""
 
 import configparser
 import os
@@ -71,8 +100,11 @@ class ConfigManager:
     """Manages configuration loading and validation."""
 
     def __init__(self, config_path: str = "./data/config.ini"):
-        self.config_path = Path(config_path)
+        self.config_path: Path = Path(config_path)
+        """Resolved path to the INI configuration file."""
+
         self._config: Optional[LSEConfig] = None
+        """Cached parsed configuration, populated by `load_config`."""
 
     def load_config(self) -> LSEConfig:
         """Load and validate configuration."""

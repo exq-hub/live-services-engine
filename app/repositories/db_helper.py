@@ -1,8 +1,32 @@
+"""SQL compilation helpers for the filter expression tree.
+
+This module translates the Pydantic filter model (`ActiveFilters`) into a
+parameterised SQL query that can be executed against the collection's SQLite
+database to retrieve matching media IDs.
+
+The filter model is a recursive tree of `FilterGroup` (AND/OR with optional
+NOT) and `FilterLeaf` nodes.  Each leaf carries a `DBFilter` with either a
+`DBValueConstraint` (match tag IDs with ANY/ALL semantics) or a
+`DBRangeConstraint` (numeric BETWEEN).
+
+The compiler walks the tree recursively, emitting SQL fragments and
+collecting bind parameters, then wraps the result in a ``SELECT ... GROUP BY
+... HAVING`` query over the ``taggings`` table.
+
+Example generated SQL::
+
+    SELECT tgs.media_id
+    FROM taggings AS tgs
+    GROUP BY tgs.media_id
+    HAVING (SUM(CASE WHEN tgs.tag_id IN (?,?) THEN 1 ELSE 0 END) > 0)
+"""
+
 from typing import Any, Dict, List, Tuple, Union, Optional
 
 from app.schemas import ActiveFilters, DBRangeConstraint, DBValueConstraint, FilterExpr, FilterGroup, FilterLeaf
 
 def placeholders(n: int) -> str:
+    """Return a comma-separated string of ``n`` SQL ``?`` placeholders."""
     return ",".join("?" for _ in range(n))
 
 def compile_active_filters(active: ActiveFilters, tagtype_map: Dict[int, str]) -> Tuple[str, List[Any]]:

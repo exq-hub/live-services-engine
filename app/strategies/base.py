@@ -1,4 +1,17 @@
-"""Base classes for search strategies."""
+"""Abstract base classes for search strategies (Strategy pattern).
+
+This module defines the interface contract that all search strategies must
+satisfy, organised in a single-level hierarchy:
+
+- `SearchStrategy` -- root ABC with the generic ``search`` signature.
+- `TextSearchStrategy` -- specialization accepting a ``text`` query.
+- `RFSearchStrategy` -- specialization accepting ``pos``/``neg`` example
+  lists and an optional ``query`` for pseudo relevance feedback.
+- `FacetedSearchStrategy` -- specialization accepting only ``filters``.
+
+New strategies should subclass the most specific base that fits their input
+contract and register themselves in `SearchService`.
+"""
 
 from abc import ABC, abstractmethod
 from typing import List, Optional
