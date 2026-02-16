@@ -1,4 +1,17 @@
-"""Service for handling item-related operations."""
+"""Service for handling item-related operations.
+
+`ItemService` provides a high-level API consumed by the item route handlers.
+It delegates to `DatabaseRepository` for data access and enriches raw
+database results with collection-specific media URLs from `ConfigManager`.
+
+Key operations:
+
+- **Base info** -- media URI, thumbnail path, source type, group ID.
+- **Detailed info** -- item metadata values for selected tagsets/filters.
+- **Related items** -- other media items sharing the same ``group_id``.
+- **Exclusion check** -- whether a given item belongs to any excluded group,
+  used by the UI to grey-out or hide items during interactive search.
+"""
 
 from typing import Dict, List, Tuple, Any
 
@@ -14,7 +27,10 @@ class ItemService:
 
     def __init__(self, database_repository, config_manager):
         self.database_repo: DatabaseRepository = database_repository
+        """Repository used for all item and metadata lookups."""
+
         self.config_manager: ConfigManager = config_manager
+        """Configuration manager providing collection media URLs."""
 
     def get_item_base_info(self, request: ItemRequest) -> Dict[str, Any]:
         """Get basic information for an item."""

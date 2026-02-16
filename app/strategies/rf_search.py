@@ -1,4 +1,21 @@
-"""Relevance feedback search strategy using SVM."""
+"""Relevance-feedback search strategy using a linear SVM.
+
+This strategy allows the user to refine search results by providing positive
+and negative example items. The pipeline:
+
+1. **Positive sample preparation** -- collects user-provided positive IDs.
+   If a text query is also provided, pseudo-RF is performed by running a
+   CLIP search and treating the top-10 results as additional positives.
+   If no positives and no query are given, 5 random items are sampled.
+2. **Negative sample preparation** -- uses user-provided negatives, or
+   falls back to 5 random items.
+3. **SVM training** -- fits a `SGDClassifier` (linear SVM via SGD) on the
+   embeddings of the positive (+1) and negative (-1) samples.
+4. **Hyperplane search** -- uses the learned weight vector (hyperplane
+   normal) as a query vector for the CLIP index, effectively ranking items
+   by their distance from the SVM decision boundary.
+5. **Skip-set & filter handling** -- identical to `CLIPSearchStrategy`.
+"""
 
 from typing import List, Optional
 
@@ -19,12 +36,18 @@ class RFSearchStrategy(RFSearchStrategy):
 
     def __init__(self, model_manager, index_repository, metadata_repository):
         self.model_manager = model_manager
+        """Model manager providing the CLIP text encoder and device."""
+
         self.index_repo = index_repository
+        """Index repository for executing nearest-neighbour vector searches."""
+
         self.metadata_repo = metadata_repository
-        # Initialize CLIP search for pseudo RF
-        self.clip_search = CLIPSearchStrategy(
+        """Database repository for ID mapping, filters, and item lookups."""
+
+        self.clip_search: CLIPSearchStrategy = CLIPSearchStrategy(
             model_manager, index_repository, metadata_repository
         )
+        """Internal CLIP search strategy used for pseudo relevance-feedback queries."""
 
     def get_strategy_name(self) -> str:
         return "RF Search"

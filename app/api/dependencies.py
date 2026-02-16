@@ -1,4 +1,20 @@
-"""FastAPI dependencies for dependency injection."""
+"""FastAPI dependency-injection functions.
+
+Each function in this module is designed to be used with ``Depends(...)`` in
+route signatures. They resolve the global `ApplicationContainer` singleton
+into the specific manager, repository, or service instance required by the
+route handler.
+
+The dependency graph is::
+
+    get_container
+    ├── get_config_manager
+    ├── get_model_manager
+    ├── get_database_repository
+    └── get_index_repository
+        ├── get_search_service  (model_manager + index_repo + database_repo)
+        └── get_item_service    (database_repo + config_manager)
+"""
 
 from fastapi import Depends
 

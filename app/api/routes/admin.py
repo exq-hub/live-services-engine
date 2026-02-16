@@ -1,4 +1,16 @@
-"""Administrative and logging API routes."""
+"""Administrative, informational, and client-event logging routes.
+
+Defines endpoints under ``/exq/`` for session management, collection
+metadata queries, and audit logging of client-side events:
+
+- ``GET  /init/{session}`` -- initialise a session; returns available collections.
+- ``POST /info/totalItems`` -- total item count for a collection.
+- ``GET  /info/filters/{session}/{collection}`` -- filter (tagset) definitions.
+- ``GET  /info/filters/values/{session}/{collection}/{tagtypeId}/{tagsetId}``
+  -- possible values for a specific filter.
+- ``POST /log/addModel`` / ``POST /log/removeModel`` -- audit model lifecycle.
+- ``POST /log/clientEvent`` -- batch-log arbitrary client-side UI events.
+"""
 
 from typing import Any, Dict, List
 

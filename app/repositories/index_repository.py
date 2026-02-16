@@ -1,4 +1,14 @@
-"""Repository for managing search indices."""
+"""Repository for managing vector search indices and embedding arrays.
+
+`IndexRepository` owns the lifecycle of all per-collection vector indices
+(FAISS or Zarr) and embedding stores used by the search strategies. It
+provides a uniform interface for:
+
+- Loading and caching CLIP indices from disk.
+- Executing nearest-neighbour searches with ``skip_ids`` filtering.
+- Opening Zarr embedding arrays for use by the relevance-feedback strategy.
+- Checking query-state support for resumable searches (future capability).
+"""
 
 import zarr
 from pathlib import Path
@@ -15,7 +25,10 @@ class IndexRepository:
 
     def __init__(self):
         self._clip_indices: Dict[str, BaseIndex] = {}
+        """Per-collection CLIP vector indices keyed by collection name."""
+
         self._embeddings_zarr: Dict[str, str] = {}
+        """Per-collection file paths to Zarr embedding arrays for relevance feedback."""
 
     def load_clip_index(self, collection: str, index_path: str, index_type = "faiss") -> BaseIndex:
         """Load CLIP index for a collection."""

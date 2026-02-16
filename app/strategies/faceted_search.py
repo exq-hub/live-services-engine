@@ -1,4 +1,12 @@
-"""Faceted search strategy"""
+"""Faceted (filter-only) search strategy.
+
+Unlike the CLIP and RF strategies, this strategy performs no vector
+similarity search at all. It compiles the user's `ActiveFilters` tree into
+a SQL query (via `db_helper.compile_active_filters`), executes it against
+the collection's SQLite database, and returns the first *n* matching media
+IDs. This is useful when the user wants to browse items by metadata
+attributes without providing a text query or relevance feedback.
+"""
 
 from typing import List
 
@@ -15,7 +23,8 @@ class FacetedSearchStrategy(FacetedSearchStrategy):
     """
 
     def __init__(self, metadata_repository: DatabaseRepository):
-        self.metadata_repo = metadata_repository
+        self.metadata_repo: DatabaseRepository = metadata_repository
+        """Database repository for compiling and executing filter queries."""
 
     def get_strategy_name(self) -> str:
         return "Faceted Search"

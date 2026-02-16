@@ -1,4 +1,13 @@
-"""Updated utilities with better error handling and logging."""
+"""Shared utility functions for logging and legacy compatibility.
+
+Provides:
+
+- `get_current_timestamp` -- integer epoch seconds.
+- `dump_log_msgpack` -- appends a MessagePack-encoded dict to a log file
+  with directory auto-creation and file-level locking (`FileLock`).
+- `get_shared_resources` -- legacy shim that returns the global
+  `ApplicationContainer` instance.
+"""
 
 import time
 from enum import Enum

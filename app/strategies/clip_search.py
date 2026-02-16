@@ -1,4 +1,21 @@
-"""CLIP-based search strategy."""
+"""CLIP text-to-image search strategy.
+
+Encodes a natural-language text query into the CLIP embedding space using
+the ``ViT-SO400M-14-SigLIP-384`` text encoder, then retrieves the *n*
+most similar media items from the collection's vector index.
+
+The search pipeline:
+
+1. **Text encoding** -- tokenize and forward through the CLIP text model
+   (FP16 on CUDA when available), L2-normalise the output.
+2. **Skip-set construction** -- translate ``seen``, ``excluded``, and
+   filter-rejected media IDs into index-space IDs so the index can skip
+   them during search rather than requiring post-filtering.
+3. **Index search** -- delegate to `IndexRepository.search_clip` which
+   dispatches to the appropriate `BaseIndex` implementation.
+4. **ID mapping** -- translate the resulting index positions back to media
+   IDs via `DatabaseRepository.get_media_ids`.
+"""
 
 import contextlib
 from typing import List, Optional
@@ -23,9 +40,14 @@ class CLIPSearchStrategy(TextSearchStrategy):
         model_manager: ModelManager,
         index_repository: IndexRepository, 
         database_repository: DatabaseRepository):
-        self.model_manager = model_manager
-        self.index_repo = index_repository
-        self.database_repo = database_repository
+        self.model_manager: ModelManager = model_manager
+        """Model manager providing the CLIP text encoder and device."""
+
+        self.index_repo: IndexRepository = index_repository
+        """Index repository for executing nearest-neighbour vector searches."""
+
+        self.database_repo: DatabaseRepository = database_repository
+        """Database repository for ID mapping, filters, and exclusion lookups."""
 
     def get_strategy_name(self) -> str:
         return "CLIP Search"

@@ -1,4 +1,15 @@
-"""Item-related API routes."""
+"""Item metadata and relationship endpoint route handlers.
+
+Defines four POST endpoints under ``/exq/item/``:
+
+- ``/base`` -- basic item info (media URI, thumbnail, source type, group).
+- ``/details`` -- detailed metadata for selected tagsets/filters.
+- ``/related`` -- IDs of items sharing the same ``group_id``.
+- ``/excluded`` -- check whether an item belongs to any excluded group.
+
+All endpoints delegate to `ItemService` and schedule background audit-log
+tasks for every request.
+"""
 
 from typing import Any, Dict, List
 

@@ -1,3 +1,25 @@
+"""SQLite-backed repository for collection metadata and filter evaluation.
+
+`DatabaseRepository` is the single point of access for all relational data
+in the LSE. Each media collection is backed by its own SQLite database that
+contains:
+
+- **medias** -- the master table of media items (source URI, thumbnail URI,
+  group ID, source type).
+- **tags / taggings / tagsets / tag_types** -- a flexible tagging system
+  where tag values are stored in type-specific tables (e.g.
+  ``categorical_tags``, ``numerical_int_tags``) and linked to media items
+  via the ``taggings`` join table.
+- **Index mapping** -- a special ``CLIP Index ID`` tagset in
+  ``numerical_int_tags`` that maps each media item to its position in the
+  CLIP vector index, enabling bidirectional translation between media IDs
+  and index IDs.
+
+The repository caches database connections and index mappings per collection
+and provides methods for item retrieval, filter evaluation (via
+`db_helper.compile_active_filters`), and related-item lookups.
+"""
+
 import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -19,10 +41,19 @@ class DatabaseRepository:
     def __init__(self):
         """Initialize the metadata repository with empty caches."""
         self._db_connection: Dict[str, sqlite3.Connection] = {}
+        """Per-collection SQLite connections keyed by collection name."""
+
         self._db_type: Dict[str, str] = {}
+        """Per-collection database backend type (e.g. ``'sqlite'``, ``'duckdb'``)."""
+
         self._item_datapoint_mapping_cache: Dict[str, Dict[str, Dict[int, int]]] = {}
+        """Nested mapping: ``collection -> index_type -> index_id -> media_id``."""
+
         self._rev_item_datapoint_mapping_cache: Dict[str, Dict[str, Dict[int, int]]] = {}
+        """Reverse mapping: ``collection -> index_type -> media_id -> index_id``."""
+
         self._tagtype_cache: Dict[str, Dict[int, str]] = {}
+        """Per-collection tag-type lookup: ``collection -> tagtype_id -> tagtype_name``."""
             
     
     def __del__(self):
