@@ -34,6 +34,7 @@ class ItemRequest(BaseModel):
     session_info: SessionInfo
     """Session context information."""
 
+
 class ItemDetailRequest(BaseModel):
     """Request tagset/filter values for a given media item and its group."""
 

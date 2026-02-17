@@ -52,10 +52,11 @@ class CLIPSearchStrategy(TextSearchStrategy):
     """Search strategy using CLIP text embeddings."""
 
     def __init__(
-        self, 
+        self,
         model_manager: ModelManager,
-        index_repository: IndexRepository, 
-        database_repository: DatabaseRepository):
+        index_repository: IndexRepository,
+        database_repository: DatabaseRepository,
+    ):
         self.model_manager: ModelManager = model_manager
         """Model manager providing the CLIP text encoder and device."""
 
@@ -81,11 +82,11 @@ class CLIPSearchStrategy(TextSearchStrategy):
         """Execute CLIP text search."""
         try:
             # if state and self.index_repo.is_query_in_state_clip(collection, state):
-                # TODO: Implement stateful search and resuming functionality
-                # Process exclusions
-                # excluded_set = self._build_excluded_set(collection, excluded)
-                # seen_set = set(seen)
-                # pass
+            # TODO: Implement stateful search and resuming functionality
+            # Process exclusions
+            # excluded_set = self._build_excluded_set(collection, excluded)
+            # seen_set = set(seen)
+            # pass
 
             # Encode text using CLIP
             text_features = await self._encode_text(text)
@@ -134,11 +135,10 @@ class CLIPSearchStrategy(TextSearchStrategy):
         database_repo: DatabaseRepository = self.database_repo
         for exc in excluded:
             item = database_repo.get_item(collection, exc)
-            related = database_repo.get_related_items(collection, item['group'])
+            related = database_repo.get_related_items(collection, item["group"])
             excluded_set.update(related)
 
         return excluded_set
-
 
     async def _search_with_expansion(
         self,
@@ -154,19 +154,27 @@ class CLIPSearchStrategy(TextSearchStrategy):
         total_items = self.database_repo.get_total_items(collection)
         skip_ids = set()
         if len(seen_set) != 0:
-            skip_ids.update(self.database_repo.get_index_ids(collection, list(seen_set), index='clip'))
+            skip_ids.update(
+                self.database_repo.get_index_ids(
+                    collection, list(seen_set), index="clip"
+                )
+            )
         if len(excluded_set) != 0:
-            skip_ids.update(self.database_repo.get_index_ids(collection, list(excluded_set), index='clip'))
+            skip_ids.update(
+                self.database_repo.get_index_ids(
+                    collection, list(excluded_set), index="clip"
+                )
+            )
 
         if filters:
             passed_ids = []
-            passed_ids = self.database_repo.get_filtered_media_ids(
-                collection, filters
-            )
+            passed_ids = self.database_repo.get_filtered_media_ids(collection, filters)
             # NOTE: Can use the size of passed_ids to determine if index search is needed
             #       If it is lower than a certain threshold we can search through the subset with
             #       the zarr embeddings array directly
-            index_passed_ids = self.database_repo.get_index_ids(collection, passed_ids, index='clip')
+            index_passed_ids = self.database_repo.get_index_ids(
+                collection, passed_ids, index="clip"
+            )
             index_skip_ids = set(range(total_items)) - set(index_passed_ids)
             skip_ids.update(index_skip_ids)
 

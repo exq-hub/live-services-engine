@@ -32,7 +32,12 @@ by the route layer for audit logging.
 import time
 from typing import Dict, List
 
-from ..strategies.base import SearchStrategy, TextSearchStrategy, RFSearchStrategy, FacetedSearchStrategy
+from ..strategies.base import (
+    SearchStrategy,
+    TextSearchStrategy,
+    RFSearchStrategy,
+    FacetedSearchStrategy,
+)
 from ..strategies.clip_search import CLIPSearchStrategy
 from ..strategies.rf_search import RFSearchStrategy as RFSearchImpl
 from ..strategies.faceted_search import FacetedSearchStrategy as FacetedSearchImpl
@@ -58,9 +63,7 @@ class SearchService:
                 model_manager, index_repository, metadata_repository
             ),
             "rf": RFSearchImpl(model_manager, index_repository, metadata_repository),
-            "faceted": FacetedSearchImpl(
-                metadata_repository
-            )
+            "faceted": FacetedSearchImpl(metadata_repository),
         }
         """Registry of available search strategies keyed by name (``clip``, ``rf``, ``faceted``)."""
 
@@ -142,20 +145,20 @@ class SearchService:
                     "neg_count": len(request.neg),
                 },
             )
-    
+
     async def search_faceted(self, request: FacetedSearchRequest) -> Dict:
         """Execute faceted search"""
         strategy = self.strategies["faceted"]
         if not isinstance(strategy, FacetedSearchStrategy):
             raise SearchError("Faceted strategy not properly configured")
-        
+
         start_time = int(time.time())
 
         try:
             suggestions = await strategy.search(
                 collection=request.session_info.collection,
                 n=request.n,
-                filters=request.filters
+                filters=request.filters,
             )
 
             completion_time = int(time.time()) - start_time
@@ -164,17 +167,16 @@ class SearchService:
                 "suggestions": suggestions,
                 "request_timestamp": start_time,
                 "completion_time": completion_time,
-                "strategy": "faceted"
+                "strategy": "faceted",
             }
         except Exception as e:
             raise SearchError(
                 f"Faceted search failed: {e}",
                 {
                     "collection": request.session_info.collection,
-                    "filters": request.filters
-                }
+                    "filters": request.filters,
+                },
             )
-        
 
     def get_available_strategies(self) -> List[str]:
         """Get list of available search strategies."""

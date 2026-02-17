@@ -39,13 +39,24 @@ Example generated SQL::
 
 from typing import Any, Dict, List, Tuple, Union, Optional
 
-from app.schemas import ActiveFilters, DBRangeConstraint, DBValueConstraint, FilterExpr, FilterGroup, FilterLeaf
+from app.schemas import (
+    ActiveFilters,
+    DBRangeConstraint,
+    DBValueConstraint,
+    FilterExpr,
+    FilterGroup,
+    FilterLeaf,
+)
+
 
 def placeholders(n: int) -> str:
     """Return a comma-separated string of ``n`` SQL ``?`` placeholders."""
     return ",".join("?" for _ in range(n))
 
-def compile_active_filters(active: ActiveFilters, tagtype_map: Dict[int, str]) -> Tuple[str, List[Any]]:
+
+def compile_active_filters(
+    active: ActiveFilters, tagtype_map: Dict[int, str]
+) -> Tuple[str, List[Any]]:
     """
     Args:
         active: selected filters rrepresented as an ActiveFiltersDB instance (dict) with shape {"root": FilterExpr}
@@ -68,13 +79,11 @@ def compile_active_filters(active: ActiveFilters, tagtype_map: Dict[int, str]) -
         ph = placeholders(len(tag_ids))
         needed = len(tag_ids)
         op = "<" if negated else "="
-        expr = (
-            f"COUNT(DISTINCT CASE WHEN tgs.tag_id IN ({ph}) THEN tgs.tag_id END) {op} {needed}"
-        )
+        expr = f"COUNT(DISTINCT CASE WHEN tgs.tag_id IN ({ph}) THEN tgs.tag_id END) {op} {needed}"
         return expr, tag_ids
 
     def emit_range_exists(
-        filter_id: int, # tagset_id
+        filter_id: int,  # tagset_id
         tagtype_id: int,
         lower: Optional[Union[int, float, str]],
         upper: Optional[Union[int, float, str]],
@@ -97,8 +106,7 @@ def compile_active_filters(active: ActiveFilters, tagtype_map: Dict[int, str]) -
             # No bounds means "any value in this set"; keep just the set_id check.
             pass
 
-        sub = (
-            f"""
+        sub = f"""
             EXISTS (
                 SELECT 1
                 FROM taggings x
@@ -106,7 +114,6 @@ def compile_active_filters(active: ActiveFilters, tagtype_map: Dict[int, str]) -
                 WHERE x.media_id = tgs.media_id AND {" AND ".join(where_parts)}
             )
             """
-        )
         if negated:
             sub = f"NOT ({sub})"
         return sub, p
@@ -131,8 +138,9 @@ def compile_active_filters(active: ActiveFilters, tagtype_map: Dict[int, str]) -
 
         # Range constraint
         if isinstance(constraint, DBRangeConstraint):
-            return emit_range_exists(fid, tagtype, constraint.lower_bound, 
-                                     constraint.upper_bound, neg)
+            return emit_range_exists(
+                fid, tagtype, constraint.lower_bound, constraint.upper_bound, neg
+            )
         raise ValueError("Unrecognized constraint shape")
 
     def compile_group(group: FilterGroup) -> Tuple[str, List[Any]]:
@@ -164,7 +172,6 @@ def compile_active_filters(active: ActiveFilters, tagtype_map: Dict[int, str]) -
             return compile_group(node)
         else:
             raise ValueError(f"Unknown node kind: {node}")
-
 
     # --- build final SQL query text ---
 

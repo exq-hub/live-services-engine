@@ -72,7 +72,7 @@ async def init_session(
 async def get_total_items(
     request: SessionInfo,
     background_tasks: BackgroundTasks,
-    database_repo: DatabaseRepository=Depends(get_database_repository),
+    database_repo: DatabaseRepository = Depends(get_database_repository),
 ) -> Dict[str, int]:
     """Get total number of items in a collection."""
     try:
@@ -93,12 +93,13 @@ async def get_total_items(
 
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
+
 @router.get("/info/filters/{session}/{collection}")
 async def get_filters(
     session: str,
     collection: str,
     background_tasks: BackgroundTasks,
-    database_repo: DatabaseRepository=Depends(get_database_repository),
+    database_repo: DatabaseRepository = Depends(get_database_repository),
 ) -> List[Dict[str, Any]]:
     """Get available filter definitions for a collection"""
     try:
@@ -118,6 +119,7 @@ async def get_filters(
 
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
+
 @router.get("/info/filters/values/{session}/{collection}/{tagtypeId}/{tagsetId}")
 async def get_filter_values(
     session: str,
@@ -125,7 +127,7 @@ async def get_filter_values(
     tagtypeId: int,
     tagsetId: int,
     background_tasks: BackgroundTasks,
-    database_repo: DatabaseRepository=Depends(get_database_repository),
+    database_repo: DatabaseRepository = Depends(get_database_repository),
 ) -> List[Dict[str, Any]]:
     """Get possible values for a specific filter in a collection."""
     try:
@@ -187,10 +189,7 @@ async def log_client_event(
     background_tasks: BackgroundTasks,
 ) -> Dict[str, str]:
     """Log a generic client event."""
-    background_tasks.add_task(
-        _log_client_event,
-        events=request
-    )
+    background_tasks.add_task(_log_client_event, events=request)
     return {"status": "Logged successfully"}
 
 
@@ -227,7 +226,9 @@ async def _log_total_items_request(session: str, collection: str, total_items: i
     dump_log_msgpack(log_message, "./logs/admin.log")
 
 
-async def _log_filters_request(session: str, collection: str, filters: list[Dict[str, Any]]):
+async def _log_filters_request(
+    session: str, collection: str, filters: list[Dict[str, Any]]
+):
     """Background task to log total items request."""
     from ...utils import dump_log_msgpack, get_current_timestamp
 
@@ -245,7 +246,13 @@ async def _log_filters_request(session: str, collection: str, filters: list[Dict
     dump_log_msgpack(log_message, "./logs/admin.log")
 
 
-async def _log_filters_values_request(session: str, collection: str, filter_values: list[Dict[str, Any]], tagtypeId: int, tagsetId: int):
+async def _log_filters_values_request(
+    session: str,
+    collection: str,
+    filter_values: list[Dict[str, Any]],
+    tagtypeId: int,
+    tagsetId: int,
+):
     """Background task to log total items request."""
     from ...utils import dump_log_msgpack, get_current_timestamp
 

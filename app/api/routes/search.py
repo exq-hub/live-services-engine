@@ -64,7 +64,7 @@ async def clip_search(
                 if request.filters
                 else None,
                 "excluded": request.excluded or [],
-                "n_requested": request.n
+                "n_requested": request.n,
             },
             suggestions=result["suggestions"],
             request_timestamp=result["request_timestamp"],
@@ -105,7 +105,7 @@ async def rf_search(
                 else None,
                 "excluded": request.excluded,
                 "query": request.query,
-                "n_requested": request.n
+                "n_requested": request.n,
             },
             suggestions=result["suggestions"],
             request_timestamp=result["request_timestamp"],
@@ -139,7 +139,7 @@ async def faceted_search(
             collection=request.session_info.collection,
             query_data={
                 "filters": request.filters.model_dump_json(),
-                "n_requested": request.n
+                "n_requested": request.n,
             },
             suggestions=result["suggestions"],
             request_timestamp=result["request_timestamp"],
@@ -152,8 +152,6 @@ async def faceted_search(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
-
-
 
 
 async def _log_search_request(

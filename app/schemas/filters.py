@@ -52,6 +52,7 @@ class DBValueConstraint(BaseModel):
     operator: Literal["AND", "OR"] = "OR"
     """Logical operator: ``"OR"`` matches any, ``"AND"`` requires all."""
 
+
 class DBRangeConstraint(BaseModel):
     """Constraint matching media items whose tag value falls within a numeric range."""
 
@@ -60,6 +61,7 @@ class DBRangeConstraint(BaseModel):
 
     lower_bound: int | float | str
     """Inclusive lower bound of the range."""
+
 
 class DBFilter(BaseModel):
     """A single database-level filter targeting one tagset.
@@ -79,6 +81,7 @@ class DBFilter(BaseModel):
     constraint: DBValueConstraint | DBRangeConstraint
     """Either a value-set or numeric-range constraint."""
 
+
 class FilterGroup(BaseModel):
     """A group of filters combined with a logical operator."""
 
@@ -94,6 +97,7 @@ class FilterGroup(BaseModel):
     not_: bool = False
     """If ``True``, the entire group result is logically negated."""
 
+
 class FilterLeaf(BaseModel):
     """A single filter condition."""
 
@@ -106,8 +110,10 @@ class FilterLeaf(BaseModel):
     not_: bool = False
     """If ``True``, the filter result is logically negated."""
 
+
 FilterExpr = Union[FilterLeaf, FilterGroup]
 """Recursive type alias: a filter expression is either a `FilterLeaf` or a `FilterGroup`."""
+
 
 class ActiveFilters(BaseModel):
     """Model for managing multiple active filters in search operations."""

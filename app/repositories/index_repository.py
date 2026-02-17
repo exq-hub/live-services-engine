@@ -46,7 +46,9 @@ class IndexRepository:
         self._embeddings_zarr: Dict[str, str] = {}
         """Per-collection file paths to Zarr embedding arrays for relevance feedback."""
 
-    def load_clip_index(self, collection: str, index_path: str, index_type = "faiss") -> BaseIndex:
+    def load_clip_index(
+        self, collection: str, index_path: str, index_type="faiss"
+    ) -> BaseIndex:
         """Load CLIP index for a collection."""
         try:
             if collection in self._clip_indices:
@@ -101,9 +103,12 @@ class IndexRepository:
         return False
 
     def search_clip(
-        self, collection: str, query_vector: np.ndarray, k: int,
-        skip_ids: set[int] = set()
-        #, q_id: int = -1, resume: bool = False
+        self,
+        collection: str,
+        query_vector: np.ndarray,
+        k: int,
+        skip_ids: set[int] = set(),
+        # , q_id: int = -1, resume: bool = False
     ) -> Tuple[int, np.ndarray]:
         """Search CLIP index."""
         index = self.get_clip_index(collection)
@@ -120,9 +125,7 @@ class IndexRepository:
         """Get zarr embeddings array for a collection."""
         zarr_path = self.get_embeddings_zarr_path(collection)
         if zarr_path is None:
-            raise IndexError(
-                f"No embeddings configured for collection: {collection}"
-            )
+            raise IndexError(f"No embeddings configured for collection: {collection}")
         store = zarr.storage.ZipStore(zarr_path, mode="r")
 
         try:
