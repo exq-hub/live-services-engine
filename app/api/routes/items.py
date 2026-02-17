@@ -90,7 +90,7 @@ async def get_item_detailed_info(
             model_id=request.session_info.modelId,
             collection=request.session_info.collection,
             media_id=request.mediaId,
-            item_name=request.mediaId
+            item_name=request.mediaId,
         )
 
         return result

@@ -162,14 +162,17 @@ class RFSearchStrategy(RFSearchStrategy):
             positive_samples = rng.choice(total_items, size=5, replace=False).tolist()
 
         if isinstance(self.metadata_repo, DatabaseRepository):
-            positive_samples = self.metadata_repo.get_index_ids(collection, positive_samples)
+            positive_samples = self.metadata_repo.get_index_ids(
+                collection, positive_samples
+            )
 
         return np.asarray(positive_samples)
 
-    def _prepare_negative_samples(self, collection, neg: List[int], total_items: int) -> np.ndarray:
+    def _prepare_negative_samples(
+        self, collection, neg: List[int], total_items: int
+    ) -> np.ndarray:
         """Prepare negative samples."""
         if neg:
-
             if isinstance(self.metadata_repo, DatabaseRepository):
                 neg = self.metadata_repo.get_index_ids(collection, neg)
             return np.asarray(neg)
@@ -178,8 +181,7 @@ class RFSearchStrategy(RFSearchStrategy):
             rng = default_rng()
             if isinstance(self.metadata_repo, DatabaseRepository):
                 neg = self.metadata_repo.get_index_ids(
-                    collection,
-                    rng.choice(total_items, size=5, replace=False).tolist()
+                    collection, rng.choice(total_items, size=5, replace=False).tolist()
                 )
                 return np.asarray(neg)
             return rng.choice(total_items, size=5, replace=False)
@@ -193,7 +195,7 @@ class RFSearchStrategy(RFSearchStrategy):
         metadata_repo: DatabaseRepository = self.metadata_repo
         for exc in excluded:
             item = metadata_repo.get_item(collection, exc)
-            related = metadata_repo.get_related_items(collection, item['group'])
+            related = metadata_repo.get_related_items(collection, item["group"])
             excluded_set.update(related)
 
         return excluded_set
@@ -212,19 +214,27 @@ class RFSearchStrategy(RFSearchStrategy):
         total_items = self.metadata_repo.get_total_items(collection)
         skip_ids = set()
         if len(seen_set) != 0:
-            skip_ids.update(self.metadata_repo.get_index_ids(collection, list(seen_set), index='clip'))
+            skip_ids.update(
+                self.metadata_repo.get_index_ids(
+                    collection, list(seen_set), index="clip"
+                )
+            )
         if len(excluded_set) != 0:
-            skip_ids.update(self.metadata_repo.get_index_ids(collection, list(excluded_set), index='clip'))
+            skip_ids.update(
+                self.metadata_repo.get_index_ids(
+                    collection, list(excluded_set), index="clip"
+                )
+            )
 
         if filters:
             passed_ids = []
-            passed_ids = self.metadata_repo.get_filtered_media_ids(
-                collection, filters
-            )
+            passed_ids = self.metadata_repo.get_filtered_media_ids(collection, filters)
             # NOTE: Can use the size of passed_ids to determine if index search is needed
             #       If it is lower than a certain threshold we can search through the subset with
             #       the zarr embeddings array directly
-            index_passed_ids = self.metadata_repo.get_index_ids(collection, passed_ids, index='clip')
+            index_passed_ids = self.metadata_repo.get_index_ids(
+                collection, passed_ids, index="clip"
+            )
             index_skip_ids = set(range(total_items)) - set(index_passed_ids)
             skip_ids.update(index_skip_ids)
 

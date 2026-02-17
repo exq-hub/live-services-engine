@@ -59,17 +59,22 @@ class CollectionConfig(BaseModel):
     """Configuration for a single collection."""
 
     clip_index: str = Field(..., description="Path to CLIP index file")
-    clip_index_type: str = Field(..., description="Type of CLIP index (faiss, zarr, etc.)")
+    clip_index_type: str = Field(
+        ..., description="Type of CLIP index (faiss, zarr, etc.)"
+    )
     database_file: str = Field(..., description="Path to database file")
     thumbnail_media_url: str = Field(..., description="Base URL for thumbnails")
     original_media_url: str = Field(..., description="Base URL for original media")
 
     # Optional: Relevance feedback embeddings
-    embeddings_file: Optional[str] = Field(None, description="Path to embeddings for relevance feedback")
+    embeddings_file: Optional[str] = Field(
+        None, description="Path to embeddings for relevance feedback"
+    )
 
     # Optional: Logging
-    log_directory: Optional[str] = Field("./logs/", description="Directory for log files")
-
+    log_directory: Optional[str] = Field(
+        "./logs/", description="Directory for log files"
+    )
 
     @validator("clip_index", "database_file")
     def validate_required_files(cls, v):

@@ -78,36 +78,32 @@ class ItemService:
         collection = request.session_info.collection
         item = {}
         group = {}
-        item = self.database_repo.get_item(collection, request.mediaId, request.filterIds)
+        item = self.database_repo.get_item(
+            collection, request.mediaId, request.filterIds
+        )
 
         if not item:
             raise DatabaseError(
                 f"Item {request.mediaId} not found in collection {collection}"
             )
 
-        if item is None or item.get('metadata') is None:
+        if item is None or item.get("metadata") is None:
             return {}
 
         # Process item metadata
-        metadata = {
-            k : v
-            for k, v in item['metadata'].items()
-        }
+        metadata = {k: v for k, v in item["metadata"].items()}
         # Process group metadata
-        metadata.update({
-            k : v
-            for k, v in group.items()
-        })
+        metadata.update({k: v for k, v in group.items()})
 
         return metadata
-
 
     def get_related_items(self, request: ItemRequest) -> Dict[str, List[int]]:
         """Get related items for an item."""
         collection = request.session_info.collection
-        related_items = self.database_repo.get_related_items(collection, request.mediaId)
+        related_items = self.database_repo.get_related_items(
+            collection, request.mediaId
+        )
         return {"related": related_items}
-
 
     def is_item_excluded(self, request: IsExcludedRequest) -> Dict[str, bool]:
         """Check if an item is in an excluded group."""
@@ -122,7 +118,6 @@ class ItemService:
                 return {"excludedOrNot": True}
 
         return {"excludedOrNot": False}
-
 
     def _process_metadata(
         self, metadata: Dict[str, Any]
@@ -141,7 +136,6 @@ class ItemService:
             info_pairs.append((display_name, display_values))
 
         return info_pairs
-
 
     def _process_group_data(self, group: Dict[str, Any]) -> List[Tuple[str, List[str]]]:
         """Process group data into display format."""

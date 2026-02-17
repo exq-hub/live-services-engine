@@ -49,38 +49,46 @@ def get_container() -> ApplicationContainer:
     return container
 
 
-def get_config_manager(app_container: ApplicationContainer=Depends(get_container)) -> ConfigManager:
+def get_config_manager(
+    app_container: ApplicationContainer = Depends(get_container),
+) -> ConfigManager:
     """Get the configuration manager."""
     return app_container.config_manager
 
-    
-def get_model_manager(app_container: ApplicationContainer=Depends(get_container)) -> ModelManager:
+
+def get_model_manager(
+    app_container: ApplicationContainer = Depends(get_container),
+) -> ModelManager:
     """Get the model manager."""
     return app_container.model_manager
 
 
-def get_database_repository(app_container: ApplicationContainer=Depends(get_container)) -> DatabaseRepository:
+def get_database_repository(
+    app_container: ApplicationContainer = Depends(get_container),
+) -> DatabaseRepository:
     """Get the database repository."""
     return app_container.database_repository
 
 
-def get_index_repository(app_container: ApplicationContainer=Depends(get_container)) -> IndexRepository:
+def get_index_repository(
+    app_container: ApplicationContainer = Depends(get_container),
+) -> IndexRepository:
     """Get the index repository."""
     return app_container.index_repository
 
 
 def get_search_service(
-    model_manager: ModelManager=Depends(get_model_manager),
-    index_repo: IndexRepository=Depends(get_index_repository),
-    database_repo: DatabaseRepository=Depends(get_database_repository),
+    model_manager: ModelManager = Depends(get_model_manager),
+    index_repo: IndexRepository = Depends(get_index_repository),
+    database_repo: DatabaseRepository = Depends(get_database_repository),
 ) -> SearchService:
     """Get the search service."""
     return SearchService(model_manager, index_repo, database_repo)
 
 
 def get_item_service(
-    database_repo: DatabaseRepository=Depends(get_database_repository),
-    config_manager: ConfigManager=Depends(get_config_manager),
+    database_repo: DatabaseRepository = Depends(get_database_repository),
+    config_manager: ConfigManager = Depends(get_config_manager),
 ) -> ItemService:
     """Get the item service."""
     return ItemService(database_repo, config_manager)

@@ -254,8 +254,9 @@ class ApplicationContainer:
 
             # Load indices
             index_repo.load_clip_index(
-                collection, collection_config.clip_index,
-                collection_config.clip_index_type
+                collection,
+                collection_config.clip_index,
+                collection_config.clip_index_type,
             )
 
             # Load embeddings for relevance feedback

@@ -79,6 +79,7 @@ class MetadataError(LSEException):
 
     pass
 
+
 class DatabaseError(LSEException):
     """Raised when there's an issue with database operations."""
 
