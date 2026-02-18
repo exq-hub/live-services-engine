@@ -177,13 +177,7 @@ async def health_check():
 
         # Quick validation that data is loaded
         for collection in collections[:1]:  # Check first collection
-            if isinstance(metadata_repo, MetadataRepository):
-                if not metadata_repo.get_metadata(collection):
-                    return {
-                        "status": "unhealthy",
-                        "reason": f"Metadata not loaded for {collection}",
-                    }
-            elif isinstance(metadata_repo, DatabaseRepository):
+            if isinstance(metadata_repo, DatabaseRepository):
                 if not metadata_repo.is_loaded(collection):
                     return {
                         "status": "unhealthy",
