@@ -32,7 +32,7 @@ The dependency graph is::
         └── get_item_service    (database_repo + config_manager)
 """
 
-from fastapi import Depends
+from fastapi import Depends, Request
 
 from app.core.config import ConfigManager
 from app.repositories.database_repository import DatabaseRepository
@@ -94,11 +94,6 @@ def get_item_service(
     return ItemService(database_repo, config_manager)
 
 
-def get_logging_service() -> LoggingService:
-    """Get the logging service."""
-    # This will be initialized properly in the main app
-    # For now, we'll create a basic instance
-    # In production, this should come from the app state
-    from fastapi import HTTPException
-
-    raise HTTPException(status_code=500, detail="Logging service not initialized")
+def get_logging_service(request: Request) -> LoggingService:
+    """Get the logging service from app state."""
+    return request.app.state.logging_service

@@ -38,11 +38,4 @@ strategies
     Pluggable search algorithm implementations (CLIP text search, relevance
     feedback via SVM, faceted/filter-based search).
 
-Modules
--------
-utils
-    Shared utility functions for timestamping and MessagePack log serialization.
-search_utils
-    Legacy utilities for IVF index search, active-filter validation, and
-    temporal shot-overlap mapping for video content.
 """
