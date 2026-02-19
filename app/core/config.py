@@ -1,4 +1,65 @@
-"""Configuration management with validation."""
+# Copyright (C) 2026 Ujjwal Sharma and Omar Shahbaz Khan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+"""Configuration management with Pydantic validation.
+
+Loads application settings from an INI file (default ``./data/config.ini``)
+and exposes them as validated Pydantic models. The configuration is split
+into three tiers:
+
+1. **Global defaults** -- ``[DEFAULT]`` section (e.g. ``ModelDevice``).
+2. **Server / logging** -- ``[SERVER]`` and ``[LOGGING]`` reserved sections.
+3. **Collections** -- every other section whose ``Enabled`` flag is ``True``
+   defines a media collection with its own index backend, database, media
+   URLs, embeddings path, and log directory.
+
+Each collection requires an ``IndexType`` and an ``EmbeddingsFile`` (a Zarr
+archive of raw CLIP embeddings, always needed for relevance feedback).  When
+``IndexType = faiss`` an additional ``CLIPIndexFile`` must point to the FAISS
+index; for ``IndexType = zarr`` the ``EmbeddingsFile`` is used directly as
+the brute-force index, so no ``CLIPIndexFile`` is needed.
+
+Example INI layout::
+
+    [DEFAULT]
+    ModelDevice = auto
+
+    [SERVER]
+    Host = 0.0.0.0
+    Port = 8000
+
+    # Zarr collection (EmbeddingsFile serves as both index and embeddings):
+    [MyZarrCollection]
+    Enabled = True
+    IndexType = zarr
+    EmbeddingsFile = /data/embeddings.zarr.zip
+    DatabaseFile = /data/db.sqlite
+    ThumbnailMediaURL = https://cdn.example.com/thumbs
+    OriginalMediaURL = https://cdn.example.com/originals
+
+    # FAISS collection (separate ANN index + raw embeddings):
+    [MyFaissCollection]
+    Enabled = True
+    IndexType = faiss
+    CLIPIndexFile = /data/index.faiss
+    EmbeddingsFile = /data/embeddings.zarr.zip
+    DatabaseFile = /data/db.sqlite
+    ThumbnailMediaURL = https://cdn.example.com/thumbs
+    OriginalMediaURL = https://cdn.example.com/originals
+"""
 
 import configparser
 import os
@@ -13,29 +74,47 @@ from .exceptions import ConfigurationError
 class CollectionConfig(BaseModel):
     """Configuration for a single collection."""
 
-    clip_index: str = Field(..., description="Path to CLIP index file")
-    clip_index_type: str = Field(..., description="Type of CLIP index (faiss, zarr, etc.)")
+    index_type: str = Field(..., description="Index backend: 'faiss' or 'zarr'")
+    clip_index_file: Optional[str] = Field(
+        None,
+        description="Path to FAISS index file. Required when index_type is 'faiss'; must be omitted for 'zarr'.",
+    )
     database_file: str = Field(..., description="Path to database file")
     thumbnail_media_url: str = Field(..., description="Base URL for thumbnails")
     original_media_url: str = Field(..., description="Base URL for original media")
-
-    # Optional: Relevance feedback embeddings
-    embeddings_file: Optional[str] = Field(None, description="Path to embeddings for relevance feedback")
+    embeddings_file: str = Field(
+        ..., description="Path to Zarr embeddings file (always required)"
+    )
 
     # Optional: Logging
-    log_directory: Optional[str] = Field("./logs/", description="Directory for log files")
+    log_directory: Optional[str] = Field(
+        "./logs/", description="Directory for log files"
+    )
 
+    @validator("clip_index_file", always=True)
+    def validate_clip_index_file(cls, v, values):
+        index_type = values.get("index_type")
+        if index_type == "faiss":
+            if v is None:
+                raise ValueError("CLIPIndexFile is required when IndexType is 'faiss'")
+            if not os.path.exists(v):
+                raise ValueError(f"CLIP index file does not exist: {v}")
+        elif v is not None:
+            raise ValueError(
+                "CLIPIndexFile must not be specified when IndexType is 'zarr'"
+            )
+        return v
 
-    @validator("clip_index", "database_file")
-    def validate_required_files(cls, v):
+    @validator("database_file")
+    def validate_database_file(cls, v):
         if not os.path.exists(v):
-            raise ValueError(f"Required file does not exist: {v}")
+            raise ValueError(f"Database file does not exist: {v}")
         return v
 
     @validator("embeddings_file")
-    def validate_optional_files(cls, v):
-        if v is not None and not os.path.exists(v):
-            raise ValueError(f"Optional file specified but does not exist: {v}")
+    def validate_embeddings_file(cls, v):
+        if not os.path.exists(v):
+            raise ValueError(f"Embeddings file does not exist: {v}")
         return v
 
 
@@ -71,8 +150,11 @@ class ConfigManager:
     """Manages configuration loading and validation."""
 
     def __init__(self, config_path: str = "./data/config.ini"):
-        self.config_path = Path(config_path)
+        self.config_path: Path = Path(config_path)
+        """Resolved path to the INI configuration file."""
+
         self._config: Optional[LSEConfig] = None
+        """Cached parsed configuration, populated by `load_config`."""
 
     def load_config(self) -> LSEConfig:
         """Load and validate configuration."""
@@ -101,16 +183,16 @@ class ConfigManager:
                     continue
 
                 config_dict = {
-                    "clip_index": section["CLIPIndex"],
-                    "clip_index_type": section.get("CLIPIndexType", "faiss"),
+                    "index_type": section["IndexType"],
                     "database_file": section["DatabaseFile"],
                     "thumbnail_media_url": section["ThumbnailMediaURL"],
                     "original_media_url": section["OriginalMediaURL"],
+                    "embeddings_file": section["EmbeddingsFile"],
                 }
 
                 # Add optional fields
                 optional_mappings = {
-                    "EmbeddingsFile": "embeddings_file",
+                    "CLIPIndexFile": "clip_index_file",
                     "LogDirectory": "log_directory",
                 }
 

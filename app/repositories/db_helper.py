@@ -1,11 +1,62 @@
+# Copyright (C) 2026 Ujjwal Sharma and Omar Shahbaz Khan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+"""SQL compilation helpers for the filter expression tree.
+
+This module translates the Pydantic filter model (`ActiveFilters`) into a
+parameterised SQL query that can be executed against the collection's SQLite
+database to retrieve matching media IDs.
+
+The filter model is a recursive tree of `FilterGroup` (AND/OR with optional
+NOT) and `FilterLeaf` nodes.  Each leaf carries a `DBFilter` with either a
+`DBValueConstraint` (match tag IDs with ANY/ALL semantics) or a
+`DBRangeConstraint` (numeric BETWEEN).
+
+The compiler walks the tree recursively, emitting SQL fragments and
+collecting bind parameters, then wraps the result in a ``SELECT ... GROUP BY
+... HAVING`` query over the ``taggings`` table.
+
+Example generated SQL::
+
+    SELECT tgs.media_id
+    FROM taggings AS tgs
+    GROUP BY tgs.media_id
+    HAVING (SUM(CASE WHEN tgs.tag_id IN (?,?) THEN 1 ELSE 0 END) > 0)
+"""
+
 from typing import Any, Dict, List, Tuple, Union, Optional
 
-from app.schemas import ActiveFilters, DBRangeConstraint, DBValueConstraint, FilterExpr, FilterGroup, FilterLeaf
+from app.schemas import (
+    ActiveFilters,
+    DBRangeConstraint,
+    DBValueConstraint,
+    FilterExpr,
+    FilterGroup,
+    FilterLeaf,
+)
+
 
 def placeholders(n: int) -> str:
+    """Return a comma-separated string of ``n`` SQL ``?`` placeholders."""
     return ",".join("?" for _ in range(n))
 
-def compile_active_filters(active: ActiveFilters, tagtype_map: Dict[int, str]) -> Tuple[str, List[Any]]:
+
+def compile_active_filters(
+    active: ActiveFilters, tagtype_map: Dict[int, str]
+) -> Tuple[str, List[Any]]:
     """
     Args:
         active: selected filters rrepresented as an ActiveFiltersDB instance (dict) with shape {"root": FilterExpr}
@@ -28,13 +79,11 @@ def compile_active_filters(active: ActiveFilters, tagtype_map: Dict[int, str]) -
         ph = placeholders(len(tag_ids))
         needed = len(tag_ids)
         op = "<" if negated else "="
-        expr = (
-            f"COUNT(DISTINCT CASE WHEN tgs.tag_id IN ({ph}) THEN tgs.tag_id END) {op} {needed}"
-        )
+        expr = f"COUNT(DISTINCT CASE WHEN tgs.tag_id IN ({ph}) THEN tgs.tag_id END) {op} {needed}"
         return expr, tag_ids
 
     def emit_range_exists(
-        filter_id: int, # tagset_id
+        filter_id: int,  # tagset_id
         tagtype_id: int,
         lower: Optional[Union[int, float, str]],
         upper: Optional[Union[int, float, str]],
@@ -57,8 +106,7 @@ def compile_active_filters(active: ActiveFilters, tagtype_map: Dict[int, str]) -
             # No bounds means "any value in this set"; keep just the set_id check.
             pass
 
-        sub = (
-            f"""
+        sub = f"""
             EXISTS (
                 SELECT 1
                 FROM taggings x
@@ -66,7 +114,6 @@ def compile_active_filters(active: ActiveFilters, tagtype_map: Dict[int, str]) -
                 WHERE x.media_id = tgs.media_id AND {" AND ".join(where_parts)}
             )
             """
-        )
         if negated:
             sub = f"NOT ({sub})"
         return sub, p
@@ -91,8 +138,9 @@ def compile_active_filters(active: ActiveFilters, tagtype_map: Dict[int, str]) -
 
         # Range constraint
         if isinstance(constraint, DBRangeConstraint):
-            return emit_range_exists(fid, tagtype, constraint.lower_bound, 
-                                     constraint.upper_bound, neg)
+            return emit_range_exists(
+                fid, tagtype, constraint.lower_bound, constraint.upper_bound, neg
+            )
         raise ValueError("Unrecognized constraint shape")
 
     def compile_group(group: FilterGroup) -> Tuple[str, List[Any]]:
@@ -124,7 +172,6 @@ def compile_active_filters(active: ActiveFilters, tagtype_map: Dict[int, str]) -
             return compile_group(node)
         else:
             raise ValueError(f"Unknown node kind: {node}")
-
 
     # --- build final SQL query text ---
 

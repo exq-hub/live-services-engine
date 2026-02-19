@@ -1,4 +1,33 @@
-"""Service for handling item-related operations."""
+# Copyright (C) 2026 Ujjwal Sharma and Omar Shahbaz Khan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+"""Service for handling item-related operations.
+
+`ItemService` provides a high-level API consumed by the item route handlers.
+It delegates to `DatabaseRepository` for data access and enriches raw
+database results with collection-specific media URLs from `ConfigManager`.
+
+Key operations:
+
+- **Base info** -- media URI, thumbnail path, source type, group ID.
+- **Detailed info** -- item metadata values for selected tagsets/filters.
+- **Related items** -- other media items sharing the same ``group_id``.
+- **Exclusion check** -- whether a given item belongs to any excluded group,
+  used by the UI to grey-out or hide items during interactive search.
+"""
 
 from typing import Dict, List, Tuple, Any
 
@@ -14,7 +43,10 @@ class ItemService:
 
     def __init__(self, database_repository, config_manager):
         self.database_repo: DatabaseRepository = database_repository
+        """Repository used for all item and metadata lookups."""
+
         self.config_manager: ConfigManager = config_manager
+        """Configuration manager providing collection media URLs."""
 
     def get_item_base_info(self, request: ItemRequest) -> Dict[str, Any]:
         """Get basic information for an item."""
@@ -46,36 +78,32 @@ class ItemService:
         collection = request.session_info.collection
         item = {}
         group = {}
-        item = self.database_repo.get_item(collection, request.mediaId, request.filterIds)
+        item = self.database_repo.get_item(
+            collection, request.mediaId, request.filterIds
+        )
 
         if not item:
             raise DatabaseError(
                 f"Item {request.mediaId} not found in collection {collection}"
             )
 
-        if item is None or item.get('metadata') is None:
+        if item is None or item.get("metadata") is None:
             return {}
 
         # Process item metadata
-        metadata = {
-            k : v
-            for k, v in item['metadata'].items()
-        }
+        metadata = {k: v for k, v in item["metadata"].items()}
         # Process group metadata
-        metadata.update({
-            k : v
-            for k, v in group.items()
-        })
+        metadata.update({k: v for k, v in group.items()})
 
         return metadata
-
 
     def get_related_items(self, request: ItemRequest) -> Dict[str, List[int]]:
         """Get related items for an item."""
         collection = request.session_info.collection
-        related_items = self.database_repo.get_related_items(collection, request.mediaId)
+        related_items = self.database_repo.get_related_items(
+            collection, request.mediaId
+        )
         return {"related": related_items}
-
 
     def is_item_excluded(self, request: IsExcludedRequest) -> Dict[str, bool]:
         """Check if an item is in an excluded group."""
@@ -90,7 +118,6 @@ class ItemService:
                 return {"excludedOrNot": True}
 
         return {"excludedOrNot": False}
-
 
     def _process_metadata(
         self, metadata: Dict[str, Any]
@@ -109,7 +136,6 @@ class ItemService:
             info_pairs.append((display_name, display_values))
 
         return info_pairs
-
 
     def _process_group_data(self, group: Dict[str, Any]) -> List[Tuple[str, List[str]]]:
         """Process group data into display format."""

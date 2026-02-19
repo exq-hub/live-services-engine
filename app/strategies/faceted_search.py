@@ -1,4 +1,28 @@
-"""Faceted search strategy"""
+# Copyright (C) 2026 Ujjwal Sharma and Omar Shahbaz Khan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+"""Faceted (filter-only) search strategy.
+
+Unlike the CLIP and RF strategies, this strategy performs no vector
+similarity search at all. It compiles the user's `ActiveFilters` tree into
+a SQL query (via `db_helper.compile_active_filters`), executes it against
+the collection's SQLite database, and returns the first *n* matching media
+IDs. This is useful when the user wants to browse items by metadata
+attributes without providing a text query or relevance feedback.
+"""
 
 from typing import List
 
@@ -15,7 +39,8 @@ class FacetedSearchStrategy(FacetedSearchStrategy):
     """
 
     def __init__(self, metadata_repository: DatabaseRepository):
-        self.metadata_repo = metadata_repository
+        self.metadata_repo: DatabaseRepository = metadata_repository
+        """Database repository for compiling and executing filter queries."""
 
     def get_strategy_name(self) -> str:
         return "Faceted Search"

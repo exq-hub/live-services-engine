@@ -1,4 +1,38 @@
-"""Centralized logging service for audit trails and system logs."""
+# Copyright (C) 2026 Ujjwal Sharma and Omar Shahbaz Khan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+"""Centralized logging service for audit trails and system logs.
+
+This module provides two classes that work together to produce a durable,
+structured audit trail of every user interaction with the LSE:
+
+`AuditLogger`
+    Low-level async writer.  Log entries are pushed onto an `asyncio.Queue`
+    and consumed by a background worker task that serializes each entry as
+    MessagePack and appends it to a log file under a `FileLock` for safe
+    concurrent access.  A synchronous ``log_sync`` method is also available
+    for non-async contexts.
+
+`LoggingService`
+    High-level facade consumed by route handlers and services.  It provides
+    semantic methods (``log_search_request``, ``log_item_request``,
+    ``log_session_init``, ``log_error``, etc.) that format the audit entry
+    and delegate to `AuditLogger`.  It also mirrors errors to the standard
+    Python ``logging`` system for operational monitoring.
+"""
 
 import asyncio
 import logging
@@ -16,11 +50,19 @@ class AuditLogger:
     """Handles audit logging with structured format and async processing."""
 
     def __init__(self, log_file: str):
-        self.log_file = Path(log_file)
+        self.log_file: Path = Path(log_file)
+        """Path to the MessagePack-encoded audit log file."""
+
         self.log_file.parent.mkdir(parents=True, exist_ok=True)
-        self.lockfile = f"{self.log_file}.lock"
-        self._queue = asyncio.Queue()
+
+        self.lockfile: str = f"{self.log_file}.lock"
+        """Path to the file-level lock used for concurrent write safety."""
+
+        self._queue: asyncio.Queue = asyncio.Queue()
+        """Async queue buffering log entries for the background writer."""
+
         self._worker_task: Optional[asyncio.Task] = None
+        """Handle to the background asyncio task consuming the log queue."""
 
     async def start(self):
         """Start the async logging worker."""
@@ -107,8 +149,11 @@ class LoggingService:
     """Service for managing all logging operations."""
 
     def __init__(self, audit_logger: AuditLogger):
-        self.audit_logger = audit_logger
-        self.system_logger = logging.getLogger(__name__)
+        self.audit_logger: AuditLogger = audit_logger
+        """Low-level audit logger that serializes entries to disk."""
+
+        self.system_logger: logging.Logger = logging.getLogger(__name__)
+        """Standard Python logger for operational monitoring output."""
 
     async def log_session_init(self, session: str, collections: list):
         """Log session initialization."""

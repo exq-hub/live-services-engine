@@ -1,4 +1,37 @@
-"""Relevance feedback search strategy using SVM."""
+# Copyright (C) 2026 Ujjwal Sharma and Omar Shahbaz Khan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+"""Relevance-feedback search strategy using a linear SVM.
+
+This strategy allows the user to refine search results by providing positive
+and negative example items. The pipeline:
+
+1. **Positive sample preparation** -- collects user-provided positive IDs.
+   If a text query is also provided, pseudo-RF is performed by running a
+   CLIP search and treating the top-10 results as additional positives.
+   If no positives and no query are given, 5 random items are sampled.
+2. **Negative sample preparation** -- uses user-provided negatives, or
+   falls back to 5 random items.
+3. **SVM training** -- fits a `SGDClassifier` (linear SVM via SGD) on the
+   embeddings of the positive (+1) and negative (-1) samples.
+4. **Hyperplane search** -- uses the learned weight vector (hyperplane
+   normal) as a query vector for the CLIP index, effectively ranking items
+   by their distance from the SVM decision boundary.
+5. **Skip-set & filter handling** -- identical to `CLIPSearchStrategy`.
+"""
 
 from typing import List, Optional
 
@@ -19,12 +52,18 @@ class RFSearchStrategy(RFSearchStrategy):
 
     def __init__(self, model_manager, index_repository, metadata_repository):
         self.model_manager = model_manager
+        """Model manager providing the CLIP text encoder and device."""
+
         self.index_repo = index_repository
+        """Index repository for executing nearest-neighbour vector searches."""
+
         self.metadata_repo = metadata_repository
-        # Initialize CLIP search for pseudo RF
-        self.clip_search = CLIPSearchStrategy(
+        """Database repository for ID mapping, filters, and item lookups."""
+
+        self.clip_search: CLIPSearchStrategy = CLIPSearchStrategy(
             model_manager, index_repository, metadata_repository
         )
+        """Internal CLIP search strategy used for pseudo relevance-feedback queries."""
 
     def get_strategy_name(self) -> str:
         return "RF Search"
@@ -123,14 +162,17 @@ class RFSearchStrategy(RFSearchStrategy):
             positive_samples = rng.choice(total_items, size=5, replace=False).tolist()
 
         if isinstance(self.metadata_repo, DatabaseRepository):
-            positive_samples = self.metadata_repo.get_index_ids(collection, positive_samples)
+            positive_samples = self.metadata_repo.get_index_ids(
+                collection, positive_samples
+            )
 
         return np.asarray(positive_samples)
 
-    def _prepare_negative_samples(self, collection, neg: List[int], total_items: int) -> np.ndarray:
+    def _prepare_negative_samples(
+        self, collection, neg: List[int], total_items: int
+    ) -> np.ndarray:
         """Prepare negative samples."""
         if neg:
-
             if isinstance(self.metadata_repo, DatabaseRepository):
                 neg = self.metadata_repo.get_index_ids(collection, neg)
             return np.asarray(neg)
@@ -139,8 +181,7 @@ class RFSearchStrategy(RFSearchStrategy):
             rng = default_rng()
             if isinstance(self.metadata_repo, DatabaseRepository):
                 neg = self.metadata_repo.get_index_ids(
-                    collection,
-                    rng.choice(total_items, size=5, replace=False).tolist()
+                    collection, rng.choice(total_items, size=5, replace=False).tolist()
                 )
                 return np.asarray(neg)
             return rng.choice(total_items, size=5, replace=False)
@@ -154,7 +195,7 @@ class RFSearchStrategy(RFSearchStrategy):
         metadata_repo: DatabaseRepository = self.metadata_repo
         for exc in excluded:
             item = metadata_repo.get_item(collection, exc)
-            related = metadata_repo.get_related_items(collection, item['group'])
+            related = metadata_repo.get_related_items(collection, item["group"])
             excluded_set.update(related)
 
         return excluded_set
@@ -173,19 +214,27 @@ class RFSearchStrategy(RFSearchStrategy):
         total_items = self.metadata_repo.get_total_items(collection)
         skip_ids = set()
         if len(seen_set) != 0:
-            skip_ids.update(self.metadata_repo.get_index_ids(collection, list(seen_set), index='clip'))
+            skip_ids.update(
+                self.metadata_repo.get_index_ids(
+                    collection, list(seen_set), index="clip"
+                )
+            )
         if len(excluded_set) != 0:
-            skip_ids.update(self.metadata_repo.get_index_ids(collection, list(excluded_set), index='clip'))
+            skip_ids.update(
+                self.metadata_repo.get_index_ids(
+                    collection, list(excluded_set), index="clip"
+                )
+            )
 
         if filters:
             passed_ids = []
-            passed_ids = self.metadata_repo.get_filtered_media_ids(
-                collection, filters
-            )
+            passed_ids = self.metadata_repo.get_filtered_media_ids(collection, filters)
             # NOTE: Can use the size of passed_ids to determine if index search is needed
             #       If it is lower than a certain threshold we can search through the subset with
             #       the zarr embeddings array directly
-            index_passed_ids = self.metadata_repo.get_index_ids(collection, passed_ids, index='clip')
+            index_passed_ids = self.metadata_repo.get_index_ids(
+                collection, passed_ids, index="clip"
+            )
             index_skip_ids = set(range(total_items)) - set(index_passed_ids)
             skip_ids.update(index_skip_ids)
 

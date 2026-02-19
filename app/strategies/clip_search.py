@@ -1,6 +1,41 @@
-"""CLIP-based search strategy."""
+# Copyright (C) 2026 Ujjwal Sharma and Omar Shahbaz Khan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+
+"""CLIP text-to-image search strategy.
+
+Encodes a natural-language text query into the CLIP embedding space using
+the ``ViT-SO400M-14-SigLIP-384`` text encoder, then retrieves the *n*
+most similar media items from the collection's vector index.
+
+The search pipeline:
+
+1. **Text encoding** -- tokenize and forward through the CLIP text model
+   (FP16 on CUDA when available), L2-normalise the output.
+2. **Skip-set construction** -- translate ``seen``, ``excluded``, and
+   filter-rejected media IDs into index-space IDs so the index can skip
+   them during search rather than requiring post-filtering.
+3. **Index search** -- delegate to `IndexRepository.search_clip` which
+   dispatches to the appropriate `BaseIndex` implementation.
+4. **ID mapping** -- translate the resulting index positions back to media
+   IDs via `DatabaseRepository.get_media_ids`.
+"""
+
+import asyncio
 import contextlib
+from functools import partial
 from typing import List, Optional
 
 import torch
@@ -19,13 +54,19 @@ class CLIPSearchStrategy(TextSearchStrategy):
     """Search strategy using CLIP text embeddings."""
 
     def __init__(
-        self, 
+        self,
         model_manager: ModelManager,
-        index_repository: IndexRepository, 
-        database_repository: DatabaseRepository):
-        self.model_manager = model_manager
-        self.index_repo = index_repository
-        self.database_repo = database_repository
+        index_repository: IndexRepository,
+        database_repository: DatabaseRepository,
+    ):
+        self.model_manager: ModelManager = model_manager
+        """Model manager providing the CLIP text encoder and device."""
+
+        self.index_repo: IndexRepository = index_repository
+        """Index repository for executing nearest-neighbour vector searches."""
+
+        self.database_repo: DatabaseRepository = database_repository
+        """Database repository for ID mapping, filters, and exclusion lookups."""
 
     def get_strategy_name(self) -> str:
         return "CLIP Search"
@@ -42,23 +83,12 @@ class CLIPSearchStrategy(TextSearchStrategy):
     ) -> List[int]:
         """Execute CLIP text search."""
         try:
-            # if state and self.index_repo.is_query_in_state_clip(collection, state):
-                # TODO: Implement stateful search and resuming functionality
-                # Process exclusions
-                # excluded_set = self._build_excluded_set(collection, excluded)
-                # seen_set = set(seen)
-                # pass
-
-            # Encode text using CLIP
+            # Encode text using CLIP. self._encode_text is an async handler than runs the CLIP text encoder in a thread pool to avoid blocking the main event loop.
             text_features = await self._encode_text(text)
 
             # Process exclusions
             excluded_set = self._build_excluded_set(collection, excluded)
             seen_set = set(seen)
-
-            # if state:
-            #     # TODO: Store query vector in state for resuming
-            #     pass
 
             # Search with expanding radius until we have enough results
             return await self._search_with_expansion(
@@ -70,8 +100,8 @@ class CLIPSearchStrategy(TextSearchStrategy):
                 f"CLIP search failed: {e}", {"collection": collection, "text": text}
             )
 
-    async def _encode_text(self, text: str) -> np.ndarray:
-        """Encode text using CLIP model."""
+    def _sync_encode_text(self, text: str) -> np.ndarray:
+        "Synchronous text encoding function to be run in a thread pool."
         device = self.model_manager.device
 
         with (
@@ -87,6 +117,11 @@ class CLIPSearchStrategy(TextSearchStrategy):
             text_features /= text_features.norm(dim=-1, keepdim=True)
             return text_features.detach().cpu().numpy()
 
+    async def _encode_text(self, text: str) -> np.ndarray:
+        """Asynchronously encode text using CLIP by running the synchronous encoding function in a thread pool."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, partial(self._sync_encode_text, text))
+
     def _build_excluded_set(self, collection: str, excluded: List[int]) -> set:
         """Build set of excluded items including related items."""
         if not excluded:
@@ -96,11 +131,10 @@ class CLIPSearchStrategy(TextSearchStrategy):
         database_repo: DatabaseRepository = self.database_repo
         for exc in excluded:
             item = database_repo.get_item(collection, exc)
-            related = database_repo.get_related_items(collection, item['group'])
+            related = database_repo.get_related_items(collection, item["group"])
             excluded_set.update(related)
 
         return excluded_set
-
 
     async def _search_with_expansion(
         self,
@@ -116,19 +150,27 @@ class CLIPSearchStrategy(TextSearchStrategy):
         total_items = self.database_repo.get_total_items(collection)
         skip_ids = set()
         if len(seen_set) != 0:
-            skip_ids.update(self.database_repo.get_index_ids(collection, list(seen_set), index='clip'))
+            skip_ids.update(
+                self.database_repo.get_index_ids(
+                    collection, list(seen_set), index="clip"
+                )
+            )
         if len(excluded_set) != 0:
-            skip_ids.update(self.database_repo.get_index_ids(collection, list(excluded_set), index='clip'))
+            skip_ids.update(
+                self.database_repo.get_index_ids(
+                    collection, list(excluded_set), index="clip"
+                )
+            )
 
         if filters:
             passed_ids = []
-            passed_ids = self.database_repo.get_filtered_media_ids(
-                collection, filters
-            )
+            passed_ids = self.database_repo.get_filtered_media_ids(collection, filters)
             # NOTE: Can use the size of passed_ids to determine if index search is needed
             #       If it is lower than a certain threshold we can search through the subset with
             #       the zarr embeddings array directly
-            index_passed_ids = self.database_repo.get_index_ids(collection, passed_ids, index='clip')
+            index_passed_ids = self.database_repo.get_index_ids(
+                collection, passed_ids, index="clip"
+            )
             index_skip_ids = set(range(total_items)) - set(index_passed_ids)
             skip_ids.update(index_skip_ids)
 
