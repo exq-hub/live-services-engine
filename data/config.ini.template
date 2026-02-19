@@ -20,18 +20,27 @@ Level = INFO
 # Add a section for each collection. Set Enabled = True to activate it.
 # ============================================================================
 
+# Zarr collection — EmbeddingsFile is used directly as the brute-force index:
 [collection1]
 Enabled = True
 
 # --- Required ---
-CLIPIndex = ./data/collection1/clip_index.zarr
-CLIPIndexType = zarr
+IndexType = zarr
+EmbeddingsFile = ./data/collection1/embeddings.zarr.zip
 DatabaseFile = ./data/collection1/collection1.db
 ThumbnailMediaURL = https://localhost:5001/collection1
 OriginalMediaURL = https://localhost:5001/collection1
 
-# --- Optional: Relevance feedback embeddings ---
-# EmbeddingsFile = ./data/collection1/embeddings.zarr
-
 # --- Optional: Logging ---
 # LogDirectory = ./logs/collection1/
+
+# FAISS collection — separate ANN index and raw embeddings required:
+# [collection2]
+# Enabled = True
+# IndexType = faiss
+# CLIPIndexFile = ./data/collection2/clip_index.faiss
+# EmbeddingsFile = ./data/collection2/embeddings.zarr.zip
+# DatabaseFile = ./data/collection2/collection2.db
+# ThumbnailMediaURL = https://localhost:5001/collection2
+# OriginalMediaURL = https://localhost:5001/collection2
+# LogDirectory = ./logs/collection2/

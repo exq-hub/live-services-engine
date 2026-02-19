@@ -253,17 +253,19 @@ class ApplicationContainer:
             database_repo.load_database(collection, collection_config.database_file)
 
             # Load indices
-            index_repo.load_clip_index(
-                collection,
-                collection_config.clip_index,
-                collection_config.clip_index_type,
-            )
+            if collection_config.index_type == "faiss":
+                index_repo.load_clip_index(
+                    collection, collection_config.clip_index_file, "faiss"
+                )
+            else:
+                index_repo.load_clip_index(
+                    collection, collection_config.embeddings_file, "zarr"
+                )
 
             # Load embeddings for relevance feedback
-            if collection_config.embeddings_file:
-                index_repo.set_embeddings_zarr_path(
-                    collection, collection_config.embeddings_file
-                )
+            index_repo.set_embeddings_zarr_path(
+                collection, collection_config.embeddings_file
+            )
 
         self._initialized = True
 
