@@ -33,7 +33,9 @@ The search pipeline:
    IDs via `DatabaseRepository.get_media_ids`.
 """
 
+import asyncio
 import contextlib
+from functools import partial
 from typing import List, Optional
 
 import torch
@@ -88,7 +90,7 @@ class CLIPSearchStrategy(TextSearchStrategy):
             # seen_set = set(seen)
             # pass
 
-            # Encode text using CLIP
+            # Encode text using CLIP. self._encode_text is an async handler than runs the CLIP text encoder in a thread pool to avoid blocking the main event loop.
             text_features = await self._encode_text(text)
 
             # Process exclusions
@@ -109,8 +111,8 @@ class CLIPSearchStrategy(TextSearchStrategy):
                 f"CLIP search failed: {e}", {"collection": collection, "text": text}
             )
 
-    async def _encode_text(self, text: str) -> np.ndarray:
-        """Encode text using CLIP model."""
+    def _sync_encode_text(self, text: str) -> np.ndarray:
+        "Synchronous text encoding function to be run in a thread pool."
         device = self.model_manager.device
 
         with (
@@ -125,6 +127,11 @@ class CLIPSearchStrategy(TextSearchStrategy):
             text_features = self.model_manager.clip_text_model(tokenized_text)
             text_features /= text_features.norm(dim=-1, keepdim=True)
             return text_features.detach().cpu().numpy()
+
+    async def _encode_text(self, text: str) -> np.ndarray:
+        """Asynchronously encode text using CLIP by running the synchronous encoding function in a thread pool."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, partial(self._sync_encode_text, text))
 
     def _build_excluded_set(self, collection: str, excluded: List[int]) -> set:
         """Build set of excluded items including related items."""
