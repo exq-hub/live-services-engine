@@ -18,7 +18,7 @@
 
 Every API request in the LSE carries a `SessionInfo` object that identifies
 the user session, the target collection, and the active model. This context
-is threaded through services, strategies, and logging and allows interactions to be traced back to the originating session. 
+is threaded through services, strategies, and logging and allows interactions to be traced back to the originating session.
 """
 
 from __future__ import annotations
