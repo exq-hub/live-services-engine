@@ -60,7 +60,9 @@ async def clip_search(
             {
                 "query": request.text,
                 "n_seen": len(request.seen or []),
-                "filters": request.filters.model_dump_json() if request.filters else None,
+                "filters": request.filters.model_dump_json()
+                if request.filters
+                else None,
                 "excluded": request.excluded or [],
                 "n_requested": request.n,
             },
@@ -98,7 +100,9 @@ async def rf_search(
                 "pos": request.pos,
                 "neg": request.neg,
                 "n_seen": len(request.seen),
-                "filters": request.filters.model_dump_json() if request.filters else None,
+                "filters": request.filters.model_dump_json()
+                if request.filters
+                else None,
                 "excluded": request.excluded,
                 "query": request.query,
                 "n_requested": request.n,

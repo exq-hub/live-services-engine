@@ -40,7 +40,11 @@ from ...schemas import (
     AddOrRemoveModelRequest,
 )
 from ...services.logging_service import LoggingService
-from ..dependencies import get_database_repository, get_config_manager, get_logging_service
+from ..dependencies import (
+    get_database_repository,
+    get_config_manager,
+    get_logging_service,
+)
 
 router = APIRouter(prefix="/exq", tags=["admin"])
 
@@ -57,7 +61,9 @@ async def init_session(
         config = config_manager.config
         collections = config.collections
 
-        background_tasks.add_task(logging_service.log_session_init, session, collections)
+        background_tasks.add_task(
+            logging_service.log_session_init, session, collections
+        )
 
         return {"session": session, "collections": collections}
 
@@ -200,6 +206,10 @@ async def log_client_event(
             logging_service.audit_logger.log,
             action=f"Client Event: {event.action}",
             session=event.session,
-            data={"element_id": event.element_id, "route": event.route, "body": event.data},
+            data={
+                "element_id": event.element_id,
+                "route": event.route,
+                "body": event.data,
+            },
         )
     return {"status": "Logged successfully"}
