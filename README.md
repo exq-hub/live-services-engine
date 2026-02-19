@@ -46,15 +46,24 @@ Reload = True
 [LOGGING]
 Level = INFO
 
+# Zarr collection — EmbeddingsFile is used directly as the brute-force index:
 [my_collection]
 Enabled = True
-CLIPIndex = ./data/my_collection/clip_index.zarr
-CLIPIndexType = zarr
+IndexType = zarr
+EmbeddingsFile = ./data/my_collection/embeddings.zarr.zip
 DatabaseFile = ./data/my_collection/my_collection.db
 ThumbnailMediaURL = https://localhost:5001/my_collection
 OriginalMediaURL = https://localhost:5001/my_collection
-# Optional: enable relevance feedback
-# EmbeddingsFile = ./data/my_collection/embeddings.zarr
+
+# FAISS collection — separate ANN index and raw embeddings required:
+# [my_faiss_collection]
+# Enabled = True
+# IndexType = faiss
+# CLIPIndexFile = ./data/my_faiss_collection/clip_index.faiss
+# EmbeddingsFile = ./data/my_faiss_collection/embeddings.zarr.zip
+# DatabaseFile = ./data/my_faiss_collection/my_collection.db
+# ThumbnailMediaURL = https://localhost:5001/my_faiss_collection
+# OriginalMediaURL = https://localhost:5001/my_faiss_collection
 ```
 
 Each `[section]` (other than `DEFAULT`, `SERVER`, and `LOGGING`) defines a collection.
@@ -196,15 +205,24 @@ Reload = True
 [LOGGING]
 Level = INFO
 
+# Zarr collection — EmbeddingsFile is used directly as the brute-force index:
 [my_collection]
 Enabled = True
-CLIPIndex = ./data/my_collection/clip_index.zarr
-CLIPIndexType = zarr
+IndexType = zarr
+EmbeddingsFile = ./data/my_collection/embeddings.zarr.zip
 DatabaseFile = ./data/my_collection/my_collection.db
 ThumbnailMediaURL = https://localhost:5001/my_collection
 OriginalMediaURL = https://localhost:5001/my_collection
-# Optional: enable relevance feedback
-# EmbeddingsFile = ./data/my_collection/embeddings.zarr
+
+# FAISS collection — separate ANN index and raw embeddings required:
+# [my_faiss_collection]
+# Enabled = True
+# IndexType = faiss
+# CLIPIndexFile = ./data/my_faiss_collection/clip_index.faiss
+# EmbeddingsFile = ./data/my_faiss_collection/embeddings.zarr.zip
+# DatabaseFile = ./data/my_faiss_collection/my_collection.db
+# ThumbnailMediaURL = https://localhost:5001/my_faiss_collection
+# OriginalMediaURL = https://localhost:5001/my_faiss_collection
 ```
 
 Each `[section]` (other than `DEFAULT`, `SERVER`, and `LOGGING`) defines a collection.
