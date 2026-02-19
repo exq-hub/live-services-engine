@@ -1,3 +1,25 @@
+# Copyright (C) 2026 Ujjwal Sharma and Omar Shahbaz Khan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+"""Search request schemas for all search endpoints.
+
+Each schema carries the parameters needed by one search strategy plus the
+common `SessionInfo` context and optional `ActiveFilters` tree.
+"""
+
 from __future__ import annotations
 from typing import Optional, Tuple
 from pydantic import BaseModel
@@ -19,11 +41,22 @@ class TextSearchRequest(BaseModel):
     """
 
     text: str
+    """Natural-language text query to search for."""
+
     n: int
+    """Maximum number of results to return."""
+
     seen: Optional[list[int]] = []
+    """Media IDs the user has already seen (skipped during search)."""
+
     filters: Optional[ActiveFilters] = None
+    """Optional filter expression tree to constrain results."""
+
     excluded: Optional[list[int]] = []
+    """Media IDs to exclude from results entirely."""
+
     session_info: SessionInfo
+    """Session context (session ID, collection, model ID)."""
 
 
 class RFSearchRequest(BaseModel):
@@ -41,13 +74,28 @@ class RFSearchRequest(BaseModel):
     """
 
     pos: list[int]
+    """Positive example media IDs provided as relevance feedback."""
+
     neg: list[int]
+    """Negative example media IDs provided as relevance feedback."""
+
     n: int
+    """Maximum number of results to return."""
+
     seen: list[int]
+    """Media IDs the user has already seen."""
+
     query: Optional[str] = None
+    """Optional text query for pseudo relevance-feedback."""
+
     filters: Optional[ActiveFilters] = None
+    """Optional filter expression tree to constrain results."""
+
     excluded: list[int]
+    """Media IDs to exclude from results entirely."""
+
     session_info: SessionInfo
+    """Session context (session ID, collection, model ID)."""
 
 
 class FacetedSearchRequest(BaseModel):
@@ -60,8 +108,13 @@ class FacetedSearchRequest(BaseModel):
     """
 
     n: int
+    """Maximum number of results to return."""
+
     filters: ActiveFilters
+    """Filter expression tree (required for faceted search)."""
+
     session_info: SessionInfo
+    """Session context (session ID, collection, model ID)."""
 
 
 class AggregationSearchRequest(BaseModel):
@@ -78,12 +131,25 @@ class AggregationSearchRequest(BaseModel):
     """
 
     texts: list[str]
+    """List of text queries to search and aggregate."""
+
     n: int
+    """Maximum number of results to return."""
+
     seen: Optional[list[int]] = []
+    """Media IDs the user has already seen."""
+
     filters: Optional[ActiveFilters] = None
+    """Optional filter expression tree to constrain results."""
+
     excluded: Optional[list[int]] = []
+    """Media IDs to exclude from results entirely."""
+
     session_info: SessionInfo
+    """Session context (session ID, collection, model ID)."""
+
     RF: Optional[Tuple[list[int], list[int]]] = None
+    """Optional ``(positive_ids, negative_ids)`` tuple for relevance feedback."""
 
 
 class SubmitRequest(BaseModel):
@@ -101,10 +167,25 @@ class SubmitRequest(BaseModel):
     """
 
     session_info: SessionInfo
+    """Session context (session ID, collection, model ID)."""
+
     itemId: Optional[int] = None
+    """Optional media ID associated with this submission."""
+
     name: Optional[str] = ""
+    """Optional name or label for the submission."""
+
     text: str
+    """Text content of the submission."""
+
     qa: bool
+    """Whether this is a Q&A-style submission."""
+
     evalId: str
+    """Evaluation identifier for tracking and scoring purposes."""
+
     start: Optional[float] = None
+    """Optional start timestamp for temporal submissions."""
+
     end: Optional[float] = None
+    """Optional end timestamp for temporal submissions."""

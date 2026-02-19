@@ -1,4 +1,30 @@
-"""Repository for managing search indices."""
+# Copyright (C) 2026 Ujjwal Sharma and Omar Shahbaz Khan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+"""Repository for managing vector search indices and embedding arrays.
+
+`IndexRepository` owns the lifecycle of all per-collection vector indices
+(FAISS or Zarr) and embedding stores used by the search strategies. It
+provides a uniform interface for:
+
+- Loading and caching CLIP indices from disk.
+- Executing nearest-neighbour searches with ``skip_ids`` filtering.
+- Opening Zarr embedding arrays for use by the relevance-feedback strategy.
+- Checking query-state support for resumable searches (future capability).
+"""
 
 import zarr
 from pathlib import Path
@@ -15,9 +41,14 @@ class IndexRepository:
 
     def __init__(self):
         self._clip_indices: Dict[str, BaseIndex] = {}
-        self._embeddings_zarr: Dict[str, str] = {}
+        """Per-collection CLIP vector indices keyed by collection name."""
 
-    def load_clip_index(self, collection: str, index_path: str, index_type = "faiss") -> BaseIndex:
+        self._embeddings_zarr: Dict[str, str] = {}
+        """Per-collection file paths to Zarr embedding arrays for relevance feedback."""
+
+    def load_clip_index(
+        self, collection: str, index_path: str, index_type="faiss"
+    ) -> BaseIndex:
         """Load CLIP index for a collection."""
         try:
             if collection in self._clip_indices:
@@ -72,9 +103,12 @@ class IndexRepository:
         return False
 
     def search_clip(
-        self, collection: str, query_vector: np.ndarray, k: int,
-        skip_ids: set[int] = set()
-        #, q_id: int = -1, resume: bool = False
+        self,
+        collection: str,
+        query_vector: np.ndarray,
+        k: int,
+        skip_ids: set[int] = set(),
+        # , q_id: int = -1, resume: bool = False
     ) -> Tuple[int, np.ndarray]:
         """Search CLIP index."""
         index = self.get_clip_index(collection)
@@ -91,9 +125,7 @@ class IndexRepository:
         """Get zarr embeddings array for a collection."""
         zarr_path = self.get_embeddings_zarr_path(collection)
         if zarr_path is None:
-            raise IndexError(
-                f"No embeddings configured for collection: {collection}"
-            )
+            raise IndexError(f"No embeddings configured for collection: {collection}")
         store = zarr.storage.ZipStore(zarr_path, mode="r")
 
         try:

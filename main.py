@@ -1,4 +1,44 @@
-"""Application entry point."""
+# Copyright (C) 2026 Ujjwal Sharma and Omar Shahbaz Khan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+"""Application entry point for the Live Services Engine (LSE).
+
+This module configures and launches the FastAPI application that serves as the
+backend for Exquisitor's multimedia search system. It handles:
+
+- **Application lifecycle**: Startup initialization of ML models, databases, and
+  indices; graceful shutdown of logging services.
+- **Middleware**: CORS configuration for cross-origin access.
+- **Routing**: Mounts the search, item, and admin route modules under the `/exq/` prefix.
+- **Error handling**: Global exception handler that catches `LSEException` subclasses,
+  logs them to the audit system, and returns structured HTTP error responses.
+- **Health monitoring**: `/health` endpoint that validates collection availability,
+  database connectivity, and index readiness.
+
+Usage::
+
+    # Direct execution
+    python main.py
+
+    # Via invoke tasks
+    invoke run --host=0.0.0.0 --port=8000
+
+    # Via uv
+    uv run python main.py
+"""
 
 import logging
 from contextlib import asynccontextmanager
@@ -12,9 +52,9 @@ from app.api.routes import search, items, admin
 from app.repositories.database_repository import DatabaseRepository
 from app.services.logging_service import AuditLogger, LoggingService
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+"""Module-level logger for startup, shutdown, and health-check messages."""
 
 
 @asynccontextmanager
@@ -67,16 +107,16 @@ async def lifespan(app: FastAPI):
         logger.error(f"Error during shutdown: {e}")
 
 
-# Create FastAPI app
 app = FastAPI(
     title="Live Services Engine",
     description="The Live Service Engine handles execution and logging of search requests within Exquisitor.",
     version="0.2.0",
     lifespan=lifespan,
 )
+"""FastAPI application instance for the Live Services Engine."""
 
-# Configure CORS
-origins = ["*"]
+origins: list[str] = ["*"]
+"""Allowed CORS origins (defaults to all origins for development)."""
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -137,13 +177,7 @@ async def health_check():
 
         # Quick validation that data is loaded
         for collection in collections[:1]:  # Check first collection
-            if isinstance(metadata_repo, MetadataRepository):
-                if not metadata_repo.get_metadata(collection):
-                    return {
-                        "status": "unhealthy",
-                        "reason": f"Metadata not loaded for {collection}",
-                    }
-            elif isinstance(metadata_repo, DatabaseRepository):
+            if isinstance(metadata_repo, DatabaseRepository):
                 if not metadata_repo.is_loaded(collection):
                     return {
                         "status": "unhealthy",

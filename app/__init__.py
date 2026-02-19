@@ -1,6 +1,41 @@
-"""Live Services Engine (LSE) main application package.
+# Copyright (C) 2026 Ujjwal Sharma and Omar Shahbaz Khan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-This package contains the core components of the Live Services Engine,
-including API routes, business logic services, data repositories, and
-search strategies for multimedia content retrieval and ranking.
+
+"""Live Services Engine (LSE) -- main application package.
+
+The Live Services Engine is a FastAPI-based backend that powers the
+Exquisitor multimedia search system. It provides multiple search strategies
+over media collections with comprehensive audit logging.
+
+Subpackages
+-----------
+api
+    FastAPI route definitions, dependency injection, and request handling.
+core
+    Configuration management, ML model lifecycle, custom exceptions, and
+    vector index implementations (FAISS, Zarr).
+repositories
+    Data-access layer for SQLite metadata databases and vector indices.
+schemas
+    Pydantic request/response models shared across the API and service layers.
+services
+    Business-logic layer coordinating search execution, item retrieval, and
+    audit logging.
+strategies
+    Pluggable search algorithm implementations (CLIP text search, relevance
+    feedback via SVM, faceted/filter-based search).
+
 """
