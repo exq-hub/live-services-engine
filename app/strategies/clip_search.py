@@ -83,23 +83,12 @@ class CLIPSearchStrategy(TextSearchStrategy):
     ) -> List[int]:
         """Execute CLIP text search."""
         try:
-            # if state and self.index_repo.is_query_in_state_clip(collection, state):
-            # TODO: Implement stateful search and resuming functionality
-            # Process exclusions
-            # excluded_set = self._build_excluded_set(collection, excluded)
-            # seen_set = set(seen)
-            # pass
-
             # Encode text using CLIP. self._encode_text is an async handler than runs the CLIP text encoder in a thread pool to avoid blocking the main event loop.
             text_features = await self._encode_text(text)
 
             # Process exclusions
             excluded_set = self._build_excluded_set(collection, excluded)
             seen_set = set(seen)
-
-            # if state:
-            #     # TODO: Store query vector in state for resuming
-            #     pass
 
             # Search with expanding radius until we have enough results
             return await self._search_with_expansion(
