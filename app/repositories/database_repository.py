@@ -38,7 +38,7 @@ and provides methods for item retrieval, filter evaluation (via
 
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from app.repositories import db_helper
 from app.schemas import ActiveFilters
@@ -70,6 +70,9 @@ class DatabaseRepository:
             str, Dict[str, Dict[int, int]]
         ] = {}
         """Reverse mapping: ``collection -> index_type -> media_id -> index_id``."""
+        
+        self._group_media_ids: Set[int] = set()
+        """Group Media IDs: A set of all ids for medias that represent a group (e.g., a video)."""
 
         self._tagtype_cache: Dict[str, Dict[int, str]] = {}
         """Per-collection tag-type lookup: ``collection -> tagtype_id -> tagtype_name``."""
@@ -112,9 +115,9 @@ class DatabaseRepository:
                     self._db_connection[collection]
                     .execute(
                         """
-                    SELECT id, description as name 
-                    FROM tag_types
-                    """
+                        SELECT id, description as name 
+                        FROM tag_types
+                        """
                     )
                     .fetchall()
                 )
@@ -125,6 +128,14 @@ class DatabaseRepository:
                 self._item_datapoint_mapping_cache[collection]["clip"],
                 self._rev_item_datapoint_mapping_cache[collection]["clip"],
             ) = self.create_item_to_datapoint_mapping(collection, source_type=1)
+            self._group_media_ids = set([
+                row[0] for row in self._db_connection[collection]
+                .execute(
+                    """
+                    SELECT id FROM medias WHERE group_id IS NULL
+                    """
+                ).fetchall()
+            ])
 
             # TODO: Check for other index types
 
@@ -532,7 +543,8 @@ class DatabaseRepository:
             )
             cursor = self._db_connection[collection].cursor()
             passed_ids = [r[0] for r in cursor.execute(query, params).fetchall()]
-            return passed_ids
+            passed_ids = set(passed_ids) - self._group_media_ids
+            return list(passed_ids)
         except Exception as e:
             raise DatabaseError(
                 f"Failed to retrieve filtered item IDs from {collection}: {e}"
