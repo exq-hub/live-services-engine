@@ -114,7 +114,7 @@ class ItemService:
                 ItemRequest(mediaId=excluded_id, session_info=request.session_info)
             )["related"]
 
-            if request.mediaId in excluded_related:
+            if request.itemId in excluded_related:
                 return {"excludedOrNot": True}
 
         return {"excludedOrNot": False}

@@ -143,7 +143,7 @@ async def is_item_excluded(
         result = item_service.is_item_excluded(request)
 
         base_info = item_service.get_item_base_info(
-            ItemRequest(mediaId=request.mediaId, session_info=request.session_info)
+            ItemRequest(mediaId=request.itemId, session_info=request.session_info)
         )
 
         background_tasks.add_task(
@@ -152,7 +152,7 @@ async def is_item_excluded(
             request.session_info.session,
             request.session_info.modelId,
             request.session_info.collection,
-            request.mediaId,
+            request.itemId,
             base_info["name"],
             {"excluded": result["excludedOrNot"]},
         )
