@@ -76,6 +76,9 @@ class DatabaseRepository:
 
         self._tagtype_cache: Dict[str, Dict[int, str]] = {}
         """Per-collection tag-type lookup: ``collection -> tagtype_id -> tagtype_name``."""
+        
+        self._sqlite_limit = 999
+        """SQLite has a default limit of 999 parameters per query, so we may need to batch queries that exceed this limit."""
 
     def __del__(self):
         """Close all database connections on deletion."""
@@ -542,9 +545,34 @@ class DatabaseRepository:
                 active=filters, tagtype_map=self._tagtype_cache[collection]
             )
             cursor = self._db_connection[collection].cursor()
-            passed_ids = [r[0] for r in cursor.execute(query, params).fetchall()]
-            passed_ids = set(passed_ids) - self._group_media_ids
-            return list(passed_ids)
+            passed_ids: Set[int] = {r[0] for r in cursor.execute(query, params).fetchall()}
+            group_ids = passed_ids & self._group_media_ids
+            group_medias = set()
+            if len(group_ids) > self._sqlite_limit:
+                cursor.execute("BEGIN")
+                cursor.execute("CREATE TEMPORARY TABLE temp_passed_gid (id INTEGER PRIMARY KEY)")
+                cursor.executemany("INSERT INTO temp_passed_gid (id) VALUES (?)", [(gid,) for gid in group_ids])
+                group_medias = cursor.execute(
+                    f"""
+                    SELECT id
+                    FROM medias m
+                    WHERE m.group_id IN (SELECT media_id FROM temp_passed_gid)
+                    """
+                ).fetchall()
+                cursor.execute("DROP TABLE temp_passed_gid")
+                cursor.execute("ROLLBACK")
+            else:
+                group_medias = cursor.execute(
+                    f"""
+                    SELECT id
+                    FROM medias m
+                    WHERE m.group_id IN ({",".join(["?"] * len(group_ids))})
+                    """,
+                    list(group_ids)
+                ).fetchall()
+            group_medias = set([r[0] for r in group_medias])
+            passed_none_group_ids = list((passed_ids - group_ids) | group_medias)
+            return list(passed_none_group_ids)
         except Exception as e:
             raise DatabaseError(
                 f"Failed to retrieve filtered item IDs from {collection}: {e}"
