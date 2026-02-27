@@ -59,6 +59,9 @@ class DatabaseRepository:
         """Initialize the metadata repository with empty caches."""
         self._db_connection: Dict[str, sqlite3.Connection] = {}
         """Per-collection SQLite connections keyed by collection name."""
+        
+        self._db_path: Dict[str, str] = {}
+        """Per-collection database file paths."""
 
         self._db_type: Dict[str, str] = {}
         """Per-collection database backend type (e.g. ``'sqlite'``, ``'duckdb'``)."""
@@ -109,6 +112,7 @@ class DatabaseRepository:
             db_path = Path(database_file)
             if not db_path.exists():
                 raise DatabaseError(f"Database file not found: {database_file}")
+            self._db_path[collection] = str(db_path)
             self._db_type[collection] = database
             if database == "sqlite":
                 self._db_connection[collection] = sqlite3.connect(
@@ -549,6 +553,9 @@ class DatabaseRepository:
             group_ids = passed_ids & self._group_media_ids
             group_medias = set()
             if len(group_ids) > self._sqlite_limit:
+                if self._db_type[collection] == "sqlite":
+                    cursor.close() # Close existing cursor before opening a new connection for batching
+                    cursor = sqlite3.connect(self._db_path[collection], autocommit=False)
                 cursor.execute("BEGIN")
                 cursor.execute("CREATE TEMPORARY TABLE temp_passed_gid (id INTEGER PRIMARY KEY)")
                 cursor.executemany("INSERT INTO temp_passed_gid (id) VALUES (?)", [(gid,) for gid in group_ids])
@@ -561,6 +568,7 @@ class DatabaseRepository:
                 ).fetchall()
                 cursor.execute("DROP TABLE temp_passed_gid")
                 cursor.execute("ROLLBACK")
+                cursor.close()
             else:
                 group_medias = cursor.execute(
                     f"""
@@ -596,6 +604,7 @@ class DatabaseRepository:
         Returns:
             Dictionary mapping index ids to
         """
+        cursor = None
         try:
             cursor = self._db_connection[collection].cursor()
             if self._db_type[collection] == "sqlite":
@@ -642,6 +651,9 @@ class DatabaseRepository:
             raise DatabaseError(
                 f"Failed to create item to datapoint mapping for collection {collection}: {e}"
             )
+        finally:
+            if cursor:
+                cursor.close()
 
     def clear_cache(self, collection: Optional[str] = None):
         """Clear cached data for the specified collection or all collections.
