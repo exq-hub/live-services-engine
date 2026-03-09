@@ -1,7 +1,36 @@
-"""Base classes for search strategies."""
+# Copyright (C) 2026 Ujjwal Sharma and Omar Shahbaz Khan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+"""Abstract base classes for search strategies (Strategy pattern).
+
+This module defines the interface contract that all search strategies must
+satisfy, organised in a single-level hierarchy:
+
+- `SearchStrategy` -- root ABC with the generic ``search`` signature.
+- `TextSearchStrategy` -- specialization accepting a ``text`` query.
+- `RFSearchStrategy` -- specialization accepting ``pos``/``neg`` example
+  lists and an optional ``query`` for pseudo relevance feedback.
+- `FacetedSearchStrategy` -- specialization accepting only ``filters``.
+
+New strategies should subclass the most specific base that fits their input
+contract and register themselves in `SearchService`.
+"""
 
 from abc import ABC, abstractmethod
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 
 from ..schemas import ActiveFilters
 
@@ -44,7 +73,7 @@ class SearchStrategy(ABC):
         """Return the name identifier for this search strategy.
 
         Returns:
-            String identifier for the strategy (e.g., 'clip', 'caption', 'rf')
+            String identifier for the strategy (e.g., 'clip', 'rf')
         """
         pass
 
@@ -53,8 +82,7 @@ class TextSearchStrategy(SearchStrategy):
     """Abstract base class for text query-based search strategies.
 
     This class specializes the SearchStrategy interface for strategies
-    that accept text queries as input, such as CLIP text-to-image search
-    or caption-based text search.
+    that accept text queries as input, such as CLIP text-to-image search.
     """
 
     @abstractmethod
@@ -114,6 +142,33 @@ class RFSearchStrategy(SearchStrategy):
             excluded: List of item IDs to exclude from results
             filters: Optional filters to apply to the search
             query: Optional text query to combine with feedback
+
+        Returns:
+            List of item indices matching the relevance feedback criteria
+        """
+        pass
+
+
+class FacetedSearchStrategy(SearchStrategy):
+    """Abstract base class for faceted search strategies.
+
+    This class specializes the SearchStrategy interface for strategies
+    that use filters fetch items.
+    """
+
+    @abstractmethod
+    async def search(
+        self,
+        collection: str,
+        filters: ActiveFilters,
+        n: int,
+    ) -> List[int]:
+        """Execute a relevance feedback search and return matching item indices.
+
+        Args:
+            collection: Name of the data collection to search
+            n: Maximum number of results to return
+            filters: Optional filters to apply to the search
 
         Returns:
             List of item indices matching the relevance feedback criteria

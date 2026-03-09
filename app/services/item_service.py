@@ -1,108 +1,117 @@
-"""Service for handling item-related operations."""
+# Copyright (C) 2026 Ujjwal Sharma and Omar Shahbaz Khan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from typing import Dict, List, Optional, Tuple, Any
 
-from ..schemas import ItemRequest, IsExcludedRequest
-from ..core.exceptions import MetadataError
+"""Service for handling item-related operations.
+
+`ItemService` provides a high-level API consumed by the item route handlers.
+It delegates to `DatabaseRepository` for data access and enriches raw
+database results with collection-specific media URLs from `ConfigManager`.
+
+Key operations:
+
+- **Base info** -- media URI, thumbnail path, source type, group ID.
+- **Detailed info** -- item metadata values for selected tagsets/filters.
+- **Related items** -- other media items sharing the same ``group_id``.
+- **Exclusion check** -- whether a given item belongs to any excluded group,
+  used by the UI to grey-out or hide items during interactive search.
+"""
+
+from typing import Dict, List, Tuple, Any
+
+from app.core.config import ConfigManager
+from app.repositories.database_repository import DatabaseRepository
+
+from ..schemas import ItemDetailRequest, ItemRequest, IsExcludedRequest
+from ..core.exceptions import DatabaseError
 
 
 class ItemService:
     """Service for item-related operations."""
 
-    def __init__(self, metadata_repository, config_manager):
-        self.metadata_repo = metadata_repository
-        self.config_manager = config_manager
+    def __init__(self, database_repository, config_manager):
+        self.database_repo: DatabaseRepository = database_repository
+        """Repository used for all item and metadata lookups."""
+
+        self.config_manager: ConfigManager = config_manager
+        """Configuration manager providing collection media URLs."""
 
     def get_item_base_info(self, request: ItemRequest) -> Dict[str, Any]:
         """Get basic information for an item."""
         collection = request.session_info.collection
-        item = self.metadata_repo.get_item(collection, request.itemId)
+        item = self.database_repo.get_item(collection, request.mediaId)
 
         if not item:
-            raise MetadataError(
-                f"Item {request.itemId} not found in collection {collection}"
+            raise DatabaseError(
+                f"Item {request.mediaId} not found in collection {collection}"
             )
-
-        # Determine media type
-        media_type = 1 if ".mp4" in item["media_uri"] else 0
 
         # Get collection config for paths
         collection_config = self.config_manager.config.collection_configs[collection]
 
         result = {
-            "id": request.itemId,
+            "id": request.mediaId,
             "name": item["item_id"],
-            "mediaId": request.itemId,
-            "mediaType": media_type,
-            "relatedGroupId": item["group"],
+            "mediaId": request.mediaId,
+            "mediaType": item["source_type"],
             "thumbPath": f"{collection_config.thumbnail_media_url}/{item['thumbnail_uri']}",
             "srcPath": f"{collection_config.original_media_url}/{item['media_uri']}",
+            "groupId": item["group"],
         }
-
-        # Add segment info for videos
-        if (
-            media_type == 1
-            and "metadata" in item
-            and "segment_info" in item["metadata"]
-        ):
-            result["segmentInfo"] = item["metadata"]["segment_info"]
 
         return result
 
-    def get_item_detailed_info(self, request: ItemRequest) -> Dict[str, Any]:
+    def get_item_detailed_info(self, request: ItemDetailRequest) -> Dict[str, Any]:
         """Get detailed information for an item."""
         collection = request.session_info.collection
-        item = self.metadata_repo.get_item(collection, request.itemId)
+        item = {}
+        group = {}
+        item = self.database_repo.get_item(
+            collection, request.mediaId, request.filterIds
+        )
 
         if not item:
-            raise MetadataError(
-                f"Item {request.itemId} not found in collection {collection}"
+            raise DatabaseError(
+                f"Item {request.mediaId} not found in collection {collection}"
             )
 
-        group = self.metadata_repo.get_group(collection, item["group"])
+        if item is None or item.get("metadata") is None:
+            return {}
 
         # Process item metadata
-        info_pairs = []
-        if "metadata" in item:
-            info_pairs.extend(self._process_metadata(item["metadata"]))
-
+        metadata = {k: v for k, v in item["metadata"].items()}
         # Process group metadata
-        if group:
-            info_pairs.extend(self._process_group_data(group))
+        metadata.update({k: v for k, v in group.items()})
 
-        return {"infoPairs": info_pairs}
+        return metadata
 
     def get_related_items(self, request: ItemRequest) -> Dict[str, List[int]]:
         """Get related items for an item."""
         collection = request.session_info.collection
-        item = self.metadata_repo.get_item(collection, request.itemId)
-
-        if not item:
-            raise MetadataError(
-                f"Item {request.itemId} not found in collection {collection}"
-            )
-
-        related_items = self.metadata_repo.get_related_items(collection)
-        if not related_items:
-            return {"related": []}
-
-        group_items = related_items.get(item["group"], [])
-        return {"related": group_items}
+        related_items = self.database_repo.get_related_items(
+            collection, request.mediaId
+        )
+        return {"related": related_items}
 
     def is_item_excluded(self, request: IsExcludedRequest) -> Dict[str, bool]:
         """Check if an item is in an excluded group."""
-        collection = request.session_info.collection
-
-        # Get the item's related items
-        item_related = self.get_related_items(
-            ItemRequest(itemId=request.itemId, session_info=request.session_info)
-        )["related"]
-        item_related_set = set(item_related)
 
         # Check against all excluded items
         for excluded_id in request.excluded_ids:
             excluded_related = self.get_related_items(
-                ItemRequest(itemId=excluded_id, session_info=request.session_info)
+                ItemRequest(mediaId=excluded_id, session_info=request.session_info)
             )["related"]
 
             if request.itemId in excluded_related:
@@ -116,16 +125,10 @@ class ItemService:
         """Process item metadata into display format."""
         info_pairs = []
 
-        # Skip certain metadata fields
-        skip_fields = {"caption", "ocr", "utc_time", "timezone", "segment_info"}
-
         for key, value in metadata.items():
-            if key in skip_fields:
-                continue
-
             display_name = key.replace("_", " ").capitalize()
 
-            if isinstance(value, list) and len(value) > 0:
+            if isinstance(value, list):
                 display_values = [str(s).replace("_", " ").capitalize() for s in value]
             else:
                 display_values = [str(value).replace("_", " ").capitalize()]

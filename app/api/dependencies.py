@@ -1,60 +1,99 @@
-"""FastAPI dependencies for dependency injection."""
+# Copyright (C) 2026 Ujjwal Sharma and Omar Shahbaz Khan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from fastapi import Depends
 
-from ..core.models import container
+"""FastAPI dependency-injection functions.
+
+Each function in this module is designed to be used with ``Depends(...)`` in
+route signatures. They resolve the global `ApplicationContainer` singleton
+into the specific manager, repository, or service instance required by the
+route handler.
+
+The dependency graph is::
+
+    get_container
+    ├── get_config_manager
+    ├── get_model_manager
+    ├── get_database_repository
+    └── get_index_repository
+        ├── get_search_service  (model_manager + index_repo + database_repo)
+        └── get_item_service    (database_repo + config_manager)
+"""
+
+from fastapi import Depends, Request
+
+from app.core.config import ConfigManager
+from app.repositories.database_repository import DatabaseRepository
+from app.repositories.index_repository import IndexRepository
+
+from ..core.models import ApplicationContainer, ModelManager, container
 from ..services.search_service import SearchService
 from ..services.item_service import ItemService
 from ..services.logging_service import LoggingService, AuditLogger
 
 
-def get_container():
+def get_container() -> ApplicationContainer:
     """Get the application container."""
     return container
 
 
-def get_config_manager(app_container=Depends(get_container)):
+def get_config_manager(
+    app_container: ApplicationContainer = Depends(get_container),
+) -> ConfigManager:
     """Get the configuration manager."""
     return app_container.config_manager
 
 
-def get_model_manager(app_container=Depends(get_container)):
+def get_model_manager(
+    app_container: ApplicationContainer = Depends(get_container),
+) -> ModelManager:
     """Get the model manager."""
     return app_container.model_manager
 
 
-def get_metadata_repository(app_container=Depends(get_container)):
-    """Get the metadata repository."""
-    return app_container.metadata_repository
+def get_database_repository(
+    app_container: ApplicationContainer = Depends(get_container),
+) -> DatabaseRepository:
+    """Get the database repository."""
+    return app_container.database_repository
 
 
-def get_index_repository(app_container=Depends(get_container)):
+def get_index_repository(
+    app_container: ApplicationContainer = Depends(get_container),
+) -> IndexRepository:
     """Get the index repository."""
     return app_container.index_repository
 
 
 def get_search_service(
-    model_manager=Depends(get_model_manager),
-    index_repo=Depends(get_index_repository),
-    metadata_repo=Depends(get_metadata_repository),
+    model_manager: ModelManager = Depends(get_model_manager),
+    index_repo: IndexRepository = Depends(get_index_repository),
+    database_repo: DatabaseRepository = Depends(get_database_repository),
 ) -> SearchService:
     """Get the search service."""
-    return SearchService(model_manager, index_repo, metadata_repo)
+    return SearchService(model_manager, index_repo, database_repo)
 
 
 def get_item_service(
-    metadata_repo=Depends(get_metadata_repository),
-    config_manager=Depends(get_config_manager),
+    database_repo: DatabaseRepository = Depends(get_database_repository),
+    config_manager: ConfigManager = Depends(get_config_manager),
 ) -> ItemService:
     """Get the item service."""
-    return ItemService(metadata_repo, config_manager)
+    return ItemService(database_repo, config_manager)
 
 
-def get_logging_service() -> LoggingService:
-    """Get the logging service."""
-    # This will be initialized properly in the main app
-    # For now, we'll create a basic instance
-    # In production, this should come from the app state
-    from fastapi import HTTPException
-
-    raise HTTPException(status_code=500, detail="Logging service not initialized")
+def get_logging_service(request: Request) -> LoggingService:
+    """Get the logging service from app state."""
+    return request.app.state.logging_service

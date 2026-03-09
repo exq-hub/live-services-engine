@@ -1,28 +1,60 @@
-"""Model management and dependency injection container."""
+# Copyright (C) 2026 Ujjwal Sharma and Omar Shahbaz Khan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+"""Model management and dependency injection container.
+
+This module provides two main components:
+
+`ModelManager`
+    Handles PyTorch device selection (CPU / CUDA / MPS) and lazy loading of
+    the CLIP text encoder (``ViT-SO400M-14-SigLIP-384``) and its tokenizer.
+    Models are loaded once at startup and cached for the application lifetime.
+
+`ApplicationContainer`
+    The central dependency-injection container that wires together all
+    major subsystems.  It owns singleton instances of `ConfigManager`,
+    `ModelManager`, `DatabaseRepository`, and `IndexRepository`, and
+    orchestrates their initialization in the correct order during startup.
+
+A module-level ``container`` instance is exported for use throughout the
+application (imported by route dependencies, the lifespan handler, etc.).
+"""
 
 import logging
-import os
-import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Optional
 
 import torch
 import open_clip
-from sentence_transformers import SentenceTransformer
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
 from .config import ConfigManager, LSEConfig
 from .exceptions import ModelLoadError
-from ..repositories.metadata_repository import MetadataRepository
+from ..repositories.database_repository import DatabaseRepository
 from ..repositories.index_repository import IndexRepository
-from ..search_utils import ShotOverlapMapper
 
 console = Console()
+"""Rich console instance for styled terminal output."""
+
 logger = logging.getLogger(__name__)
+"""Module-level logger for model and container diagnostics."""
 
 
 def timer_decorator(func):
@@ -47,12 +79,16 @@ class ModelManager:
 
     def __init__(self, config: LSEConfig):
         self.config = config
+        """Validated LSE configuration snapshot."""
+
         self._device: Optional[torch.device] = None
+        """Lazily resolved PyTorch device (CPU, CUDA, or MPS)."""
+
         self._clip_text_model: Optional[torch.nn.Module] = None
+        """Cached CLIP text encoder (ViT-SO400M-14-SigLIP-384)."""
+
         self._clip_text_tokenizer = None
-        self._caption_embedding_model: Optional[SentenceTransformer] = None
-        self._shot_overlap_mappers: Dict[str, Dict] = {}
-        self._caption_shot_ids_lists: Dict[str, list] = {}
+        """Cached CLIP text tokenizer matching the text encoder."""
 
     @property
     def device(self) -> torch.device:
@@ -75,29 +111,11 @@ class ModelManager:
             self._clip_text_tokenizer = self._load_clip_text_tokenizer()
         return self._clip_text_tokenizer
 
-    @property
-    def caption_embedding_model(self) -> SentenceTransformer:
-        """Get the caption embedding model."""
-        if self._caption_embedding_model is None:
-            self._caption_embedding_model = self._load_caption_embedding_model()
-        return self._caption_embedding_model
-
-    def get_shot_overlap_mapper(self, collection: str) -> Optional[Dict]:
-        """Get shot overlap mapper for a collection."""
-        return self._shot_overlap_mappers.get(collection)
-
-    def get_caption_shot_ids_list(self, collection: str) -> Optional[list]:
-        """Get caption shot IDs list for a collection."""
-        return self._caption_shot_ids_lists.get(collection)
-
     def initialize_models(self):
         """Explicitly initialize all models during startup."""
         try:
             logger.info("Initializing CLIP text model...")
             self._clip_text_model = self._load_clip_text_model()
-
-            logger.info("Initializing caption embedding model...")
-            self._caption_embedding_model = self._load_caption_embedding_model()
 
             logger.info("Initializing CLIP tokenizer...")
             self._clip_text_tokenizer = self._load_clip_text_tokenizer()
@@ -159,103 +177,25 @@ class ModelManager:
         except Exception as e:
             raise ModelLoadError(f"Failed to load CLIP tokenizer: {e}")
 
-    @timer_decorator
-    def _load_caption_embedding_model(self) -> SentenceTransformer:
-        """Load the caption embedding model."""
-        try:
-            model = SentenceTransformer(
-                "mixedbread-ai/mxbai-embed-large-v1", device=self.device
-            )
-            model.eval()
-            return model
-        except Exception as e:
-            raise ModelLoadError(f"Failed to load caption embedding model: {e}")
-
-    def initialize_collection_models(
-        self, collection: str, collection_config, metadata_repo: MetadataRepository
-    ):
-        """Initialize collection-specific models and mappers."""
-        if (
-            collection_config.caption_index
-            and collection_config.caption_shot_mapping_file
-            and collection_config.segment_duration
-        ):
-            try:
-                # Initialize shot overlap mapper for this collection
-                mapper, shot_ids = self._init_shot_overlap_mapper(
-                    collection, collection_config, metadata_repo
-                )
-                self._shot_overlap_mappers[collection] = mapper
-                self._caption_shot_ids_lists[collection] = shot_ids
-            except Exception as e:
-                logger.warning(
-                    f"Failed to initialize shot overlap mapper for {collection}: {e}"
-                )
-
-    @timer_decorator
-    def _init_shot_overlap_mapper(
-        self, collection: str, collection_config, metadata_repo: MetadataRepository
-    ):
-        """Initialize shot overlap mapper for a collection."""
-        metadata = metadata_repo.get_metadata(collection)
-        if not metadata:
-            raise ModelLoadError(f"No metadata available for collection {collection}")
-
-        # Prepare base shot mapping
-        items = metadata["items"]
-        item_to_shot_mapping = {
-            x["item_id"]: {
-                "video_id": x["group"],
-                "start_time": x["metadata"]["segment_info"]["start"],
-                "end_time": x["metadata"]["segment_info"]["end"],
-            }
-            for x in items
-        }
-
-        # Prepare caption shot mapping
-        mapping_file = Path(collection_config.caption_shot_mapping_file)
-        if not mapping_file.exists():
-            raise ModelLoadError(f"Caption shot mapping file not found: {mapping_file}")
-
-        with open(mapping_file, "r") as f:
-            caption_shot_mapping_lines = f.readlines()
-
-        caption_shot_mapping_dict = {}
-        caption_shot_ids_list = []
-
-        for line in caption_shot_mapping_lines:
-            group_id_str, block_str = line.strip().split()
-            block = int(block_str)
-            start_time = block * collection_config.segment_duration
-            end_time = start_time + collection_config.segment_duration
-            key = f"{group_id_str}_{start_time}_{end_time}"
-            value = {
-                "video_id": group_id_str,
-                "start_time": start_time,
-                "end_time": end_time,
-            }
-            caption_shot_mapping_dict[key] = value
-            caption_shot_ids_list.append(key)
-
-        # Create the overlap mapping
-        shot_mapper = ShotOverlapMapper()
-        result = shot_mapper.create_overlap_mapping(
-            item_to_shot_mapping=item_to_shot_mapping,
-            second_mapping=caption_shot_mapping_dict,
-        )
-
-        return result, caption_shot_ids_list
-
 
 class ApplicationContainer:
     """Dependency injection container for the application."""
 
     def __init__(self):
         self._config_manager: Optional[ConfigManager] = None
+        """Singleton configuration manager, created on first access."""
+
         self._model_manager: Optional[ModelManager] = None
-        self._metadata_repo: Optional[MetadataRepository] = None
+        """Singleton model manager, created on first access."""
+
+        self._database_repo: Optional[DatabaseRepository] = None
+        """Singleton database repository for all collections."""
+
         self._index_repo: Optional[IndexRepository] = None
-        self._initialized = False
+        """Singleton index repository for all collections."""
+
+        self._initialized: bool = False
+        """Whether `initialize()` has completed successfully."""
 
     @property
     def config_manager(self) -> ConfigManager:
@@ -273,11 +213,11 @@ class ApplicationContainer:
         return self._model_manager
 
     @property
-    def metadata_repository(self) -> MetadataRepository:
-        """Get the metadata repository."""
-        if self._metadata_repo is None:
-            self._metadata_repo = MetadataRepository()
-        return self._metadata_repo
+    def database_repository(self) -> DatabaseRepository:
+        """Get the database repository."""
+        if self._database_repo is None:
+            self._database_repo = DatabaseRepository()
+        return self._database_repo
 
     @property
     def index_repository(self) -> IndexRepository:
@@ -295,7 +235,7 @@ class ApplicationContainer:
 
         config = self.config_manager.config
         model_manager = self.model_manager
-        metadata_repo = self.metadata_repository
+        database_repo = self.database_repository
         index_repo = self.index_repository
 
         logger.info(f"Running on Device: {model_manager.device}")
@@ -310,40 +250,21 @@ class ApplicationContainer:
             collection_config = config.collection_configs[collection]
 
             # Load metadata
-            metadata_repo.load_metadata(collection, collection_config.metadata_file)
-            metadata_repo.load_filters(collection, collection_config.filters_file)
-            metadata_repo.load_related_items(
-                collection, collection_config.related_items_file
-            )
+            database_repo.load_database(collection, collection_config.database_file)
 
             # Load indices
-            index_repo.load_clip_index(collection, collection_config.clip_index)
-
-            if collection_config.caption_index:
-                index_repo.load_caption_index(
-                    collection, collection_config.caption_index
+            if collection_config.index_type == "faiss":
+                index_repo.load_clip_index(
+                    collection, collection_config.clip_index_file, "faiss"
+                )
+            else:
+                index_repo.load_clip_index(
+                    collection, collection_config.embeddings_file, "zarr"
                 )
 
-            # Load PCA data or embeddings
-            if (
-                collection_config.pca_model
-                and collection_config.std_scaler
-                and collection_config.pca_embeddings_file
-            ):
-                index_repo.load_pca_data(
-                    collection,
-                    collection_config.pca_model,
-                    collection_config.std_scaler,
-                    collection_config.pca_embeddings_file,
-                )
-            elif collection_config.embeddings_file:
-                index_repo.set_embeddings_zarr_path(
-                    collection, collection_config.embeddings_file
-                )
-
-            # Initialize collection-specific models
-            model_manager.initialize_collection_models(
-                collection, collection_config, metadata_repo
+            # Load embeddings for relevance feedback
+            index_repo.set_embeddings_zarr_path(
+                collection, collection_config.embeddings_file
             )
 
         self._initialized = True
@@ -356,5 +277,5 @@ class ApplicationContainer:
         )
 
 
-# Global container instance
-container = ApplicationContainer()
+container: ApplicationContainer = ApplicationContainer()
+"""Global singleton container used throughout the application for dependency resolution."""

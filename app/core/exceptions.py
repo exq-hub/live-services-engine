@@ -1,4 +1,39 @@
-"""Custom exceptions for the LSE application."""
+# Copyright (C) 2026 Ujjwal Sharma and Omar Shahbaz Khan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+"""Custom exception hierarchy for the LSE application.
+
+All application-specific exceptions inherit from `LSEException`, which
+carries a human-readable ``message`` and an optional ``details`` dictionary
+for structured context. The global exception handler in ``main.py`` catches
+any `LSEException` and converts it to an HTTP 400 response while also
+recording it in the audit log.
+
+Hierarchy::
+
+    LSEException
+    ├── ConfigurationError   -- invalid or missing configuration
+    ├── ModelLoadError        -- ML model loading/device failures
+    ├── SearchError           -- search strategy execution failures
+    ├── IndexError            -- vector index issues (FAISS/Zarr)
+    ├── MetadataError         -- metadata retrieval issues
+    ├── DatabaseError         -- SQLite query / connection failures
+    ├── ValidationError       -- request data validation failures
+    └── ServiceUnavailableError -- transient unavailability
+"""
 
 from typing import Any, Dict, Optional
 
@@ -8,8 +43,11 @@ class LSEException(Exception):
 
     def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
         super().__init__(message)
-        self.message = message
-        self.details = details or {}
+        self.message: str = message
+        """Human-readable error description."""
+
+        self.details: Dict[str, Any] = details or {}
+        """Structured context dict included in HTTP error responses and audit logs."""
 
 
 class ConfigurationError(LSEException):
@@ -38,6 +76,12 @@ class IndexError(LSEException):
 
 class MetadataError(LSEException):
     """Raised when there's an issue with metadata operations."""
+
+    pass
+
+
+class DatabaseError(LSEException):
+    """Raised when there's an issue with database operations."""
 
     pass
 

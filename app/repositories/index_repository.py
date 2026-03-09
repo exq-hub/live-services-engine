@@ -1,26 +1,55 @@
-"""Repository for managing search indices."""
+# Copyright (C) 2026 Ujjwal Sharma and Omar Shahbaz Khan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import faiss
+
+"""Repository for managing vector search indices and embedding arrays.
+
+`IndexRepository` owns the lifecycle of all per-collection vector indices
+(FAISS or Zarr) and embedding stores used by the search strategies. It
+provides a uniform interface for:
+
+- Loading and caching CLIP indices from disk.
+- Executing nearest-neighbour searches with ``skip_ids`` filtering.
+- Opening Zarr embedding arrays for use by the relevance-feedback strategy.
+- Checking query-state support for resumable searches (future capability).
+"""
+
 import zarr
-import compress_pickle as cp
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 import numpy as np
+
+from app.core.indexes import BaseIndex, FaissIndex, ZarrIndex
 
 from ..core.exceptions import IndexError
 
 
 class IndexRepository:
-    """Repository for managing FAISS indices and embeddings."""
+    """Repository for managing vector indices and embeddings."""
 
     def __init__(self):
-        self._clip_indices: Dict[str, faiss.Index] = {}
-        self._caption_indices: Dict[str, faiss.Index] = {}
-        self._pca_models: Dict[str, Dict] = {}
-        self._embeddings_zarr: Dict[str, str] = {}
+        self._clip_indices: Dict[str, BaseIndex] = {}
+        """Per-collection CLIP vector indices keyed by collection name."""
 
-    def load_clip_index(self, collection: str, index_path: str) -> faiss.Index:
-        """Load CLIP FAISS index for a collection."""
+        self._embeddings_zarr: Dict[str, str] = {}
+        """Per-collection file paths to Zarr embedding arrays for relevance feedback."""
+
+    def load_clip_index(
+        self, collection: str, index_path: str, index_type="faiss"
+    ) -> BaseIndex:
+        """Load CLIP index for a collection."""
         try:
             if collection in self._clip_indices:
                 return self._clip_indices[collection]
@@ -29,74 +58,21 @@ class IndexRepository:
             if not index_file.exists():
                 raise IndexError(f"CLIP index file not found: {index_path}")
 
-            index = faiss.read_index(str(index_file))
-            self._clip_indices[collection] = index
-            return index
+            if index_type == "faiss":
+                self._clip_indices[collection] = FaissIndex()
+            elif index_type == "zarr":
+                self._clip_indices[collection] = ZarrIndex()
+            elif index_type == "ecp":
+                raise IndexError("eCP is not currently supported for indices.")
+            else:
+                raise IndexError(f"Unsupported index type: {index_type}")
+
+            self._clip_indices[collection].load_index(index_file)
+
+            return self._clip_indices[collection]
 
         except Exception as e:
             raise IndexError(f"Failed to load CLIP index from {index_path}: {e}")
-
-    def load_caption_index(self, collection: str, index_path: str) -> faiss.Index:
-        """Load caption FAISS index for a collection."""
-        try:
-            if collection in self._caption_indices:
-                return self._caption_indices[collection]
-
-            index_file = Path(index_path)
-            if not index_file.exists():
-                raise IndexError(f"Caption index file not found: {index_path}")
-
-            index = faiss.read_index(str(index_file))
-            self._caption_indices[collection] = index
-            return index
-
-        except Exception as e:
-            raise IndexError(f"Failed to load caption index from {index_path}: {e}")
-
-    def load_pca_data(
-        self,
-        collection: str,
-        pca_model_path: str,
-        scaler_path: str,
-        embeddings_path: str,
-    ) -> Dict:
-        """Load PCA model, scaler, and embeddings."""
-        try:
-            if collection in self._pca_models:
-                return self._pca_models[collection]
-
-            # Load PCA model
-            pca_file = Path(pca_model_path)
-            if not pca_file.exists():
-                raise IndexError(f"PCA model file not found: {pca_model_path}")
-
-            with open(pca_file, "rb") as f:
-                pca_model = cp.load(f, compression="gzip")
-
-            # Load scaler
-            scaler_file = Path(scaler_path)
-            if not scaler_file.exists():
-                raise IndexError(f"Scaler file not found: {scaler_path}")
-
-            with open(scaler_file, "rb") as f:
-                scaler = cp.load(f, compression="gzip")
-
-            # Validate embeddings file
-            embeddings_file = Path(embeddings_path)
-            if not embeddings_file.exists():
-                raise IndexError(f"PCA embeddings file not found: {embeddings_path}")
-
-            pca_data = {
-                "model": pca_model,
-                "scaler": scaler,
-                "embeddings_f": str(embeddings_file),
-            }
-
-            self._pca_models[collection] = pca_data
-            return pca_data
-
-        except Exception as e:
-            raise IndexError(f"Failed to load PCA data for {collection}: {e}")
 
     def set_embeddings_zarr_path(self, collection: str, embeddings_path: str):
         """Set the path to embeddings zarr file for a collection."""
@@ -106,62 +82,51 @@ class IndexRepository:
 
         self._embeddings_zarr[collection] = str(embeddings_file)
 
-    def get_clip_index(self, collection: str) -> Optional[faiss.Index]:
+    def get_clip_index(self, collection: str) -> Optional[BaseIndex]:
         """Get CLIP index for a collection."""
         return self._clip_indices.get(collection)
-
-    def get_caption_index(self, collection: str) -> Optional[faiss.Index]:
-        """Get caption index for a collection."""
-        return self._caption_indices.get(collection)
-
-    def get_pca_data(self, collection: str) -> Optional[Dict]:
-        """Get PCA data for a collection."""
-        return self._pca_models.get(collection)
 
     def get_embeddings_zarr_path(self, collection: str) -> Optional[str]:
         """Get embeddings zarr path for a collection."""
         return self._embeddings_zarr.get(collection)
 
+    def is_query_in_state_clip(self, collection: str, state: int) -> bool:
+        """Check if a query state exists for a collection."""
+
+        index = self.get_clip_index(collection)
+        if index is None:
+            raise IndexError(f"CLIP index not loaded for collection: {collection}")
+
+        if self._clip_indices[collection].query_state_support:
+            return self._clip_indices[collection].is_query_in_state(state)
+
+        return False
+
     def search_clip(
-        self, collection: str, query_vector: np.ndarray, k: int
-    ) -> Tuple[np.ndarray, np.ndarray]:
+        self,
+        collection: str,
+        query_vector: np.ndarray,
+        k: int,
+        skip_ids: set[int] = set(),
+        # , q_id: int = -1, resume: bool = False
+    ) -> Tuple[int, np.ndarray]:
         """Search CLIP index."""
         index = self.get_clip_index(collection)
         if index is None:
             raise IndexError(f"CLIP index not loaded for collection: {collection}")
 
         try:
-            distances, indices = index.search(query_vector, k)
-            return distances, indices
+            _, indices, distances = index.search(query_vector, k, skip_ids=skip_ids)
+            return indices, distances
         except Exception as e:
             raise IndexError(f"CLIP search failed for collection {collection}: {e}")
 
-    def search_caption(
-        self, collection: str, query_vector: np.ndarray, k: int
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """Search caption index."""
-        index = self.get_caption_index(collection)
-        if index is None:
-            raise IndexError(f"Caption index not loaded for collection: {collection}")
-
-        try:
-            distances, indices = index.search(query_vector, k)
-            return distances, indices
-        except Exception as e:
-            raise IndexError(f"Caption search failed for collection {collection}: {e}")
-
     def get_embeddings_array(self, collection: str) -> zarr.Array:
         """Get zarr embeddings array for a collection."""
-        pca_data = self.get_pca_data(collection)
-        if pca_data:
-            store = zarr.storage.ZipStore(pca_data["embeddings_f"], mode="r")
-        else:
-            zarr_path = self.get_embeddings_zarr_path(collection)
-            if zarr_path is None:
-                raise IndexError(
-                    f"No embeddings configured for collection: {collection}"
-                )
-            store = zarr.storage.ZipStore(zarr_path, mode="r")
+        zarr_path = self.get_embeddings_zarr_path(collection)
+        if zarr_path is None:
+            raise IndexError(f"No embeddings configured for collection: {collection}")
+        store = zarr.storage.ZipStore(zarr_path, mode="r")
 
         try:
             emb_arr = zarr.open(store, mode="r")["embeddings"]
@@ -175,11 +140,7 @@ class IndexRepository:
         """Clear cached indices for a collection or all collections."""
         if collection:
             self._clip_indices.pop(collection, None)
-            self._caption_indices.pop(collection, None)
-            self._pca_models.pop(collection, None)
             self._embeddings_zarr.pop(collection, None)
         else:
             self._clip_indices.clear()
-            self._caption_indices.clear()
-            self._pca_models.clear()
             self._embeddings_zarr.clear()
