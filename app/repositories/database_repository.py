@@ -60,6 +60,9 @@ class DatabaseRepository:
         self._db_connection: Dict[str, sqlite3.Connection] = {}
         """Per-collection SQLite connections keyed by collection name."""
 
+        self._db_path: Dict[str, str] = {}
+        """Per-collection database file paths."""
+
         self._db_type: Dict[str, str] = {}
         """Per-collection database backend type (e.g. ``'sqlite'``, ``'duckdb'``)."""
 
@@ -76,6 +79,9 @@ class DatabaseRepository:
 
         self._tagtype_cache: Dict[str, Dict[int, str]] = {}
         """Per-collection tag-type lookup: ``collection -> tagtype_id -> tagtype_name``."""
+        
+        self._sqlite_limit = 999
+        """SQLite has a default limit of 999 parameters per query, so we may need to batch queries that exceed this limit."""
 
     def __del__(self):
         """Close all database connections on deletion."""
@@ -106,6 +112,7 @@ class DatabaseRepository:
             db_path = Path(database_file)
             if not db_path.exists():
                 raise DatabaseError(f"Database file not found: {database_file}")
+            self._db_path[collection] = db_path
             self._db_type[collection] = database
             if database == "sqlite":
                 self._db_connection[collection] = sqlite3.connect(
@@ -542,9 +549,38 @@ class DatabaseRepository:
                 active=filters, tagtype_map=self._tagtype_cache[collection]
             )
             cursor = self._db_connection[collection].cursor()
-            passed_ids = [r[0] for r in cursor.execute(query, params).fetchall()]
-            passed_ids = set(passed_ids) - self._group_media_ids
-            return list(passed_ids)
+            passed_ids: Set[int] = {r[0] for r in cursor.execute(query, params).fetchall()}
+            group_ids = passed_ids & self._group_media_ids
+            group_medias = set()
+            if len(group_ids) > self._sqlite_limit:
+                if self._db_type[collection] == "sqlite":
+                    cursor.close() # Close existing cursor before opening a new connection for batching
+                    cursor = sqlite3.connect(self._db_path[collection], autocommit=False)
+                cursor.execute("BEGIN")
+                cursor.execute("CREATE TEMPORARY TABLE temp_passed_gid (id INTEGER PRIMARY KEY)")
+                cursor.executemany("INSERT INTO temp_passed_gid (id) VALUES (?)", [(gid,) for gid in group_ids])
+                group_medias = cursor.execute(
+                    f"""
+                    SELECT id
+                    FROM medias m
+                    WHERE m.group_id IN (SELECT media_id FROM temp_passed_gid)
+                    """
+                ).fetchall()
+                cursor.execute("DROP TABLE temp_passed_gid")
+                cursor.execute("ROLLBACK")
+                cursor.close()
+            else:
+                group_medias = cursor.execute(
+                    f"""
+                    SELECT id
+                    FROM medias m
+                    WHERE m.group_id IN ({",".join(["?"] * len(group_ids))})
+                    """,
+                    list(group_ids)
+                ).fetchall()
+            group_medias = set([r[0] for r in group_medias])
+            passed_none_group_ids = list((passed_ids - group_ids) | group_medias)
+            return list(passed_none_group_ids)
         except Exception as e:
             raise DatabaseError(
                 f"Failed to retrieve filtered item IDs from {collection}: {e}"
@@ -568,6 +604,7 @@ class DatabaseRepository:
         Returns:
             Dictionary mapping index ids to
         """
+        cursor = None
         try:
             cursor = self._db_connection[collection].cursor()
             if self._db_type[collection] == "sqlite":
@@ -614,6 +651,9 @@ class DatabaseRepository:
             raise DatabaseError(
                 f"Failed to create item to datapoint mapping for collection {collection}: {e}"
             )
+        finally:
+            if cursor:
+                cursor.close()
 
     def clear_cache(self, collection: Optional[str] = None):
         """Clear cached data for the specified collection or all collections.
