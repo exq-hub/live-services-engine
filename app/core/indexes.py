@@ -208,10 +208,7 @@ class FaissIndex(BaseIndex):
 
     def load_index(self, model_path: Path):
         self.index = faiss.read_index(str(model_path))
-        if isinstance(self.index, faiss.IndexIVF) or (
-            isinstance(self.index, faiss.IndexPreTransform)
-            and isinstance(faiss.downcast_index(self.index.index), faiss.IndexIVF)
-        ):
+        if isinstance(self.index, faiss.IndexIVF): 
             self.index_type = "ivf"
         elif isinstance(self.index, faiss.IndexHNSW):
             self.index_type = "hnsw"
