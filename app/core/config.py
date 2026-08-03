@@ -16,74 +16,130 @@
 
 """Configuration management with Pydantic validation.
 
-Loads application settings from an INI file (default ``./data/config.ini``)
-and exposes them as validated Pydantic models. The configuration is split
-into three tiers:
+Loads application settings from a config file (default ``./data/config.ini``)
+and exposes them as validated Pydantic models. Two on-disk formats are
+supported, dispatched by file extension:
 
-1. **Global defaults** -- ``[DEFAULT]`` section (e.g. ``ModelDevice``).
-2. **Server / logging** -- ``[SERVER]`` and ``[LOGGING]`` reserved sections.
-3. **Collections** -- every other section whose ``Enabled`` flag is ``True``
-   defines a media collection with its own index backend, database, media
-   URLs, embeddings path, and log directory.
+- **``.toml``** -- the current format, and the one new deployments should
+  use. Each collection declares an explicit list of named indexes, so a
+  collection can hold more than one index/embedding representation.
+- **``.ini``** -- deprecated, retained only for basic single-index setups.
+  Each collection maps onto a single-element index list; the index name
+  defaults to ``"CLIP"`` (the common case) but can be overridden with an
+  ``IndexName`` key when the embedding isn't CLIP (e.g. a text-transcript
+  index).
 
-Each collection requires an ``IndexType`` and an ``EmbeddingsFile`` (a Zarr
-archive of raw CLIP embeddings, always needed for relevance feedback).  When
-``IndexType = faiss`` an additional ``CLIPIndexFile`` must point to the FAISS
-index; for ``IndexType = zarr`` the ``EmbeddingsFile`` is used directly as
-the brute-force index, so no ``CLIPIndexFile`` is needed.
+Note the two formats use different casing for both section/table names and
+keys, and this is intentional: TOML tables and keys are lowercase
+``snake_case`` (``[server]``, ``[logging]``, ``[default]``, ``model_device``,
+...), matching the Pydantic field names directly, while INI sections stay
+upper-case and keys stay ``PascalCase`` exactly as before -- ``[SERVER]``,
+``[LOGGING]``, ``[DEFAULT]`` for sections; ``IndexType``, ``DatabaseFile``,
+``ThumbnailMediaURL`` for keys, thus existing ``.ini`` files do not need to
+be rewritten to keep working.
 
-Example INI layout::
+The configuration is split into three tiers:
 
-    [DEFAULT]
-    ModelDevice = auto
+1. **Global defaults** -- ``[default]`` table (e.g. ``model_device``).
+2. **Server / logging** -- ``[server]`` and ``[logging]`` reserved tables.
+3. **Collections** -- each ``[[collections]]`` table whose ``enabled`` flag
+   is true, with its own database, media URLs, log directory, and list of
+   indexes.
 
-    [SERVER]
-    Host = 0.0.0.0
-    Port = 8000
+Each index requires an ``index_type`` and an ``embeddings_file`` (a Zarr
+archive of raw embeddings, always needed for relevance feedback). When
+``index_type = "faiss"`` an additional ``index_file`` must point to the
+FAISS index; for ``index_type = "zarr"`` the ``embeddings_file`` is used
+directly as the brute-force index, so no ``index_file`` is needed.
 
-    # Zarr collection (EmbeddingsFile serves as both index and embeddings):
-    [MyZarrCollection]
-    Enabled = True
-    IndexType = zarr
-    EmbeddingsFile = /data/embeddings.zarr.zip
-    DatabaseFile = /data/db.sqlite
-    ThumbnailMediaURL = https://cdn.example.com/thumbs
-    OriginalMediaURL = https://cdn.example.com/originals
+Example TOML layout::
 
-    # FAISS collection (separate ANN index + raw embeddings):
-    [MyFaissCollection]
-    Enabled = True
-    IndexType = faiss
-    CLIPIndexFile = /data/index.faiss
-    EmbeddingsFile = /data/embeddings.zarr.zip
-    DatabaseFile = /data/db.sqlite
-    ThumbnailMediaURL = https://cdn.example.com/thumbs
-    OriginalMediaURL = https://cdn.example.com/originals
+    [server]
+    host = "0.0.0.0"
+    port = 8000
+
+    [[collections]]
+    name = "MyCollection"
+    enabled = true
+    database_file = "/data/db.sqlite"
+    thumbnail_media_url = "https://cdn.example.com/thumbs"
+    original_media_url = "https://cdn.example.com/originals"
+
+      [[collections.indexes]]
+      name = "CLIP"
+      index_type = "zarr"
+      embeddings_file = "/data/embeddings.zarr.zip"
+
+      [[collections.indexes]]
+      name = "Text"
+      index_type = "faiss"
+      index_file = "/data/transcripts.faiss"
+      embeddings_file = "/data/transcript_embeddings.zarr.zip"
 """
 
 import configparser
 import os
+import tomllib
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
+from pydantic_core.core_schema import ValidationInfo
 
 from .exceptions import ConfigurationError
+
+
+class IndexConfig(BaseModel):
+    """Configuration for a single index within a collection."""
+
+    name: str = Field(
+        ...,
+        description=(
+            "Identifies this index within its collection. Also used as the "
+            "DB id-tag namespace (e.g. a name of 'CLIP' resolves to a "
+            "'CLIP Index ID' tagset)."
+        ),
+    )
+    index_type: str = Field(..., description="Index backend: 'faiss' or 'zarr'")
+    index_file: Optional[str] = Field(
+        None,
+        description="Path to the ANN index file. Required when index_type is 'faiss'; must be omitted for 'zarr'.",
+    )
+    embeddings_file: str = Field(
+        ..., description="Path to Zarr embeddings file (always required)"
+    )
+
+    @field_validator("index_file")
+    @classmethod
+    def validate_index_file(cls, v: Optional[str], info: ValidationInfo):
+        index_type = info.data.get("index_type")
+        if index_type == "faiss":
+            if v is None:
+                raise ValueError("index_file is required when index_type is 'faiss'")
+            if not os.path.exists(v):
+                raise ValueError(f"Index file does not exist: {v}")
+        elif v is not None:
+            raise ValueError(
+                f"index_file must not be specified when index_type is '{index_type}'"
+            )
+        return v
+
+    @field_validator("embeddings_file")
+    @classmethod
+    def validate_embeddings_file(cls, v: str) -> str:
+        if not os.path.exists(v):
+            raise ValueError(f"Embeddings file does not exist: {v}")
+        return v
 
 
 class CollectionConfig(BaseModel):
     """Configuration for a single collection."""
 
-    index_type: str = Field(..., description="Index backend: 'faiss' or 'zarr'")
-    clip_index_file: Optional[str] = Field(
-        None,
-        description="Path to FAISS index file. Required when index_type is 'faiss'; must be omitted for 'zarr'.",
-    )
     database_file: str = Field(..., description="Path to database file")
     thumbnail_media_url: str = Field(..., description="Base URL for thumbnails")
     original_media_url: str = Field(..., description="Base URL for original media")
-    embeddings_file: str = Field(
-        ..., description="Path to Zarr embeddings file (always required)"
+    indexes: List[IndexConfig] = Field(
+        ..., min_length=1, description="Indexes available for this collection"
     )
 
     # Optional: Logging
@@ -91,30 +147,19 @@ class CollectionConfig(BaseModel):
         "./logs/", description="Directory for log files"
     )
 
-    @validator("clip_index_file", always=True)
-    def validate_clip_index_file(cls, v, values):
-        index_type = values.get("index_type")
-        if index_type == "faiss":
-            if v is None:
-                raise ValueError("CLIPIndexFile is required when IndexType is 'faiss'")
-            if not os.path.exists(v):
-                raise ValueError(f"CLIP index file does not exist: {v}")
-        elif v is not None:
-            raise ValueError(
-                "CLIPIndexFile must not be specified when IndexType is 'zarr'"
-            )
-        return v
-
-    @validator("database_file")
-    def validate_database_file(cls, v):
+    @field_validator("database_file")
+    @classmethod
+    def validate_database_file(cls, v: str) -> str:
         if not os.path.exists(v):
             raise ValueError(f"Database file does not exist: {v}")
         return v
 
-    @validator("embeddings_file")
-    def validate_embeddings_file(cls, v):
-        if not os.path.exists(v):
-            raise ValueError(f"Embeddings file does not exist: {v}")
+    @field_validator("indexes")
+    @classmethod
+    def validate_unique_index_names(cls, v: List[IndexConfig]) -> List[IndexConfig]:
+        names = [index.name for index in v]
+        if len(names) != len(set(names)):
+            raise ValueError("Index names must be unique within a collection")
         return v
 
 
@@ -135,8 +180,9 @@ class LSEConfig(BaseModel):
     # Logging settings
     log_level: str = Field("INFO", description="Log level")
 
-    @validator("model_device")
-    def validate_device(cls, v):
+    @field_validator("model_device")
+    @classmethod
+    def validate_device(cls, v: str) -> str:
         valid_devices = ["auto", "cpu", "cuda", "mps"]
         device_lower = v.lower()
         if not any(device_lower.startswith(valid) for valid in valid_devices):
@@ -151,7 +197,7 @@ class ConfigManager:
 
     def __init__(self, config_path: str = "./data/config.ini"):
         self.config_path: Path = Path(config_path)
-        """Resolved path to the INI configuration file."""
+        """Resolved path to the config file. Format is inferred from the extension."""
 
         self._config: Optional[LSEConfig] = None
         """Cached parsed configuration, populated by `load_config`."""
@@ -163,74 +209,135 @@ class ConfigManager:
                 f"Configuration file not found: {self.config_path}"
             )
 
+        suffix = self.config_path.suffix.lower()
         try:
-            parser = configparser.ConfigParser()
-            parser.read(self.config_path)
-
-            # Parse DEFAULT section
-            default_section = parser["DEFAULT"]
-
-            # Discover collections: any section with Enabled = True
-            # (skip reserved sections)
-            reserved_sections = {"DEFAULT", "SERVER", "LOGGING"}
-            collection_configs = {}
-            for collection_name in parser.sections():
-                if collection_name in reserved_sections:
-                    continue
-
-                section = parser[collection_name]
-                if section.get("Enabled", "False").lower() != "true":
-                    continue
-
-                config_dict = {
-                    "index_type": section["IndexType"],
-                    "database_file": section["DatabaseFile"],
-                    "thumbnail_media_url": section["ThumbnailMediaURL"],
-                    "original_media_url": section["OriginalMediaURL"],
-                    "embeddings_file": section["EmbeddingsFile"],
-                }
-
-                # Add optional fields
-                optional_mappings = {
-                    "CLIPIndexFile": "clip_index_file",
-                    "LogDirectory": "log_directory",
-                }
-
-                for ini_key, pydantic_key in optional_mappings.items():
-                    if ini_key in section:
-                        config_dict[pydantic_key] = section[ini_key]
-
-                collection_configs[collection_name] = CollectionConfig(**config_dict)
-
-            enabled_collections = list(collection_configs.keys())
-
-            config_dict = {
-                "model_device": default_section.get("ModelDevice", "auto"),
-                "collections": enabled_collections,
-                "collection_configs": collection_configs,
-            }
-
-            # Add optional server settings if present
-            if "SERVER" in parser:
-                server_section = parser["SERVER"]
-                config_dict.update(
-                    {
-                        "host": server_section.get("Host", "127.0.0.1"),
-                        "port": int(server_section.get("Port", 8000)),
-                        "reload": server_section.getboolean("Reload", True),
-                    }
+            if suffix == ".toml":
+                config_dict = self._parse_toml()
+            elif suffix == ".ini":
+                config_dict = self._parse_ini()
+            else:
+                raise ConfigurationError(
+                    f"Unsupported configuration file extension '{suffix}' for "
+                    f"{self.config_path}. Expected '.toml' (or deprecated '.ini')."
                 )
-
-            # Add optional logging settings if present
-            if "LOGGING" in parser:
-                logging_section = parser["LOGGING"]
-                config_dict["log_level"] = logging_section.get("Level", "INFO")
 
             self._config = LSEConfig(**config_dict)
             return self._config
 
+        except ConfigurationError:
+            raise
         except Exception as e:
             raise ConfigurationError(f"Failed to load configuration: {str(e)}") from e
+
+    def _parse_toml(self) -> dict:
+        """Parse the current TOML config format into an `LSEConfig` kwargs dict."""
+        with open(self.config_path, "rb") as f:
+            data = tomllib.load(f)
+
+        collection_configs: Dict[str, CollectionConfig] = {}
+        for collection_data in data.get("collections", []):
+            if not collection_data.get("enabled", False):
+                continue
+
+            indexes = [
+                IndexConfig(
+                    name=index_data["name"],
+                    index_type=index_data["index_type"],
+                    index_file=index_data.get("index_file"),
+                    embeddings_file=index_data["embeddings_file"],
+                )
+                for index_data in collection_data.get("indexes", [])
+            ]
+
+            collection_configs[collection_data["name"]] = CollectionConfig(
+                database_file=collection_data["database_file"],
+                thumbnail_media_url=collection_data["thumbnail_media_url"],
+                original_media_url=collection_data["original_media_url"],
+                log_directory=collection_data.get("log_directory", "./logs/"),
+                indexes=indexes,
+            )
+
+        config_dict = {
+            "model_device": data.get("default", {}).get("model_device", "auto"),
+            "collections": list(collection_configs.keys()),
+            "collection_configs": collection_configs,
+        }
+
+        server_section = data.get("server")
+        if server_section:
+            config_dict.update(
+                {
+                    "host": server_section.get("host", "127.0.0.1"),
+                    "port": int(server_section.get("port", 8000)),
+                    "reload": bool(server_section.get("reload", True)),
+                }
+            )
+
+        logging_section = data.get("logging")
+        if logging_section:
+            config_dict["log_level"] = logging_section.get("level", "INFO")
+
+        return config_dict
+
+    def _parse_ini(self) -> dict:
+        """Parse the deprecated single-index INI format into an `LSEConfig` kwargs dict.
+
+        Each collection section maps onto a single-element `indexes` list.
+        The index name comes from the optional `IndexName` key, defaulting
+        to "CLIP". Sections stay upper-case and keys stay PascalCase as in
+        the original format (`[SERVER]`, `IndexType`, `DatabaseFile`, ...).
+        """
+        parser = configparser.ConfigParser()
+        parser.read(self.config_path)
+
+        default_section = parser["DEFAULT"]
+        reserved_sections = {"DEFAULT", "SERVER", "LOGGING"}
+        collection_configs: Dict[str, CollectionConfig] = {}
+
+        for collection_name in parser.sections():
+            if collection_name in reserved_sections:
+                continue
+
+            section = parser[collection_name]
+            if section.get("Enabled", "False").lower() != "true":
+                continue
+
+            index_config = IndexConfig(
+                name=section.get("IndexName", "CLIP"),
+                index_type=section["IndexType"],
+                index_file=section.get("CLIPIndexFile"),
+                embeddings_file=section["EmbeddingsFile"],
+            )
+
+            collection_configs[collection_name] = CollectionConfig(
+                database_file=section["DatabaseFile"],
+                thumbnail_media_url=section["ThumbnailMediaURL"],
+                original_media_url=section["OriginalMediaURL"],
+                log_directory=section.get("LogDirectory", "./logs/"),
+                indexes=[index_config],
+            )
+
+        config_dict = {
+            "model_device": default_section.get("ModelDevice", "auto"),
+            "collections": list(collection_configs.keys()),
+            "collection_configs": collection_configs,
+        }
+
+        if "SERVER" in parser:
+            server_section = parser["SERVER"]
+            config_dict.update(
+                {
+                    "host": server_section.get("Host", "127.0.0.1"),
+                    "port": int(server_section.get("Port", 8000)),
+                    "reload": server_section.getboolean("Reload", True),
+                }
+            )
+
+        if "LOGGING" in parser:
+            logging_section = parser["LOGGING"]
+            config_dict["log_level"] = logging_section.get("Level", "INFO")
+
+        return config_dict
 
     @property
     def config(self) -> LSEConfig:
