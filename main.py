@@ -46,7 +46,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.models import container
+from app.core.models import container, ApplicationContainer
 from app.core.exceptions import LSEException, ConfigurationError
 from app.api.routes import search, items, admin
 from app.repositories.database_repository import DatabaseRepository
@@ -55,6 +55,8 @@ from app.services.logging_service import AuditLogger, LoggingService
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 """Module-level logger for startup, shutdown, and health-check messages."""
+
+container: ApplicationContainer = container
 
 
 @asynccontextmanager
@@ -172,13 +174,13 @@ async def health_check():
             return {"status": "unhealthy", "reason": "No collections configured"}
 
         # Check if repositories are initialized
-        metadata_repo = container.metadata_repository
+        database_repo = container.database_repository
         index_repo = container.index_repository
 
         # Quick validation that data is loaded
         for collection in collections[:1]:  # Check first collection
-            if isinstance(metadata_repo, DatabaseRepository):
-                if not metadata_repo.is_loaded(collection):
+            if isinstance(database_repo, DatabaseRepository):
+                if not database_repo.is_loaded(collection):
                     return {
                         "status": "unhealthy",
                         "reason": f"Database not loaded for {collection}",

@@ -201,12 +201,28 @@ class LSEConfig(BaseModel):
 class ConfigManager:
     """Manages configuration loading and validation."""
 
-    def __init__(self, config_path: str = "./data/config.ini"):
-        self.config_path: Path = Path(config_path)
+    def __init__(self, config_path: Optional[str] = None):
+        self.config_path: Path = Path(config_path or self._resolve_default_path())
         """Resolved path to the config file. Format is inferred from the extension."""
 
         self._config: Optional[LSEConfig] = None
         """Cached parsed configuration, populated by `load_config`."""
+
+    @staticmethod
+    def _resolve_default_path() -> str:
+        """Pick a config path when none is given explicitly.
+
+        Probes for `./data/config.toml` then the deprecated
+        `./data/config.ini`, in that order, and returns whichever one
+        actually exists. This lets callers (e.g. `ApplicationContainer`)
+        always construct `ConfigManager()` with no arguments
+        """
+        candidates = ("./data/config.toml", "./data/config.ini")
+        for candidate in candidates:
+            if Path(candidate).exists():
+                return candidate
+
+        return candidates[0]
 
     def load_config(self) -> LSEConfig:
         """Load and validate configuration."""
