@@ -52,6 +52,12 @@ archive of raw embeddings, always needed for relevance feedback). When
 FAISS index; for ``index_type = "zarr"`` the ``embeddings_file`` is used
 directly as the brute-force index, so no ``index_file`` is needed.
 
+For ``index_type = "zarr"``, ``embeddings_file``'s extension picks which
+Zarr store backend loads it (see ``ZarrIndex.load_index`` in
+``app/core/indexes.py``): ``.zip``/``.zipstore`` open as a zip archive,
+``.zarr`` opens directly as a Zarr directory store. Any other extension
+is rejected at load time.
+
 Example TOML layout::
 
     [server]
@@ -68,13 +74,13 @@ Example TOML layout::
       [[collections.indexes]]
       name = "CLIP"
       index_type = "zarr"
-      embeddings_file = "/data/embeddings.zarr.zip"
+      embeddings_file = "/data/embeddings.zipstore"
 
       [[collections.indexes]]
       name = "Text"
       index_type = "faiss"
       index_file = "/data/transcripts.faiss"
-      embeddings_file = "/data/transcript_embeddings.zarr.zip"
+      embeddings_file = "/data/transcript_embeddings.zarr"
 """
 
 import configparser

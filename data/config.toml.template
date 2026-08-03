@@ -34,7 +34,12 @@ original_media_url = "https://localhost:5001/collection1"
   [[collections.indexes]]
   name = "CLIP"
   index_type = "zarr"
-  embeddings_file = "./data/collection1/embeddings.zarr.zip"
+  embeddings_file = "./data/collection1/embeddings.zipstore"
+
+  [[collections.indexes]]
+  name = "Text"
+  index_type = "zarr"
+  embeddings_file = "./data/collection1/embeddings.zarr"
 
 # FAISS collection -- separate ANN index and raw embeddings required. A
 # collection can declare more than one index (e.g. a second index over a
@@ -52,4 +57,4 @@ original_media_url = "https://localhost:5001/collection1"
 #   name = "CLIP"
 #   index_type = "faiss"
 #   index_file = "./data/collection2/clip_index.faiss"
-#   embeddings_file = "./data/collection2/embeddings.zarr.zip"
+#   embeddings_file = "./data/collection2/embeddings.zip"

@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple
 import numpy as np
 
-from app.core.indexes import BaseIndex, FaissIndex, ZarrIndex
+from app.core.indexes import BaseIndex, FaissIndex, ZarrIndex, open_zarr_array
 
 from ..core.exceptions import IndexError
 
@@ -126,11 +126,9 @@ class IndexRepository:
         zarr_path = self.get_embeddings_zarr_path(collection)
         if zarr_path is None:
             raise IndexError(f"No embeddings configured for collection: {collection}")
-        store = zarr.storage.ZipStore(zarr_path, mode="r")
 
         try:
-            emb_arr = zarr.open(store, mode="r")["embeddings"]
-            return emb_arr
+            return open_zarr_array(Path(zarr_path))
         except Exception as e:
             raise IndexError(
                 f"Failed to open embeddings array for collection {collection}: {e}"
