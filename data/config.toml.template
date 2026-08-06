@@ -31,10 +31,13 @@ original_media_url = "https://localhost:5001/collection1"
 # --- Optional: Logging ---
 # log_directory = "./logs/collection1/"
 
+  # A collection with more than one index must mark exactly one as
+  # default = true -- that's the index used when a request doesn't pick one.
   [[collections.indexes]]
   name = "CLIP"
   index_type = "zarr"
   embeddings_file = "./data/collection1/embeddings.zipstore"
+  default = true
 
   [[collections.indexes]]
   name = "Text"

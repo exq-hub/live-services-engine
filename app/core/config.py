@@ -96,6 +96,18 @@ class IndexConfig(BaseModel):
     embeddings_file: str = Field(
         ..., description="Path to Zarr embeddings file (always required)"
     )
+    model_name: str = Field(
+        "ViT-SO400M-14-SigLIP-384",
+        description="Embedding model that produced this index's vectors.",
+    )
+    default: bool = Field(
+        False,
+        description=(
+            "Marks this as the index used when a request doesn't specify one. "
+            "Required (exactly one) when a collection has multiple indexes; "
+            "implied when a collection has only one."
+        ),
+    )
 
     @field_validator("index_file")
     @classmethod
@@ -149,6 +161,25 @@ class CollectionConfig(BaseModel):
         if len(names) != len(set(names)):
             raise ValueError("Index names must be unique within a collection")
         return v
+
+    @field_validator("indexes")
+    @classmethod
+    def validate_default_index(cls, v: List[IndexConfig]) -> List[IndexConfig]:
+        if len(v) > 1:
+            defaults = [index for index in v if index.default]
+            if len(defaults) != 1:
+                raise ValueError(
+                    "Exactly one index must be marked default when a collection "
+                    f"has multiple indexes (found {len(defaults)})"
+                )
+        return v
+
+    @property
+    def default_index(self) -> IndexConfig:
+        """The index used when a request doesn't specify one explicitly."""
+        if len(self.indexes) == 1:
+            return self.indexes[0]
+        return next(index for index in self.indexes if index.default)
 
 
 class LSEConfig(BaseModel):
@@ -224,15 +255,20 @@ class ConfigManager:
             if not collection_data.get("enabled", False):
                 continue
 
-            indexes = [
-                IndexConfig(
-                    name=index_data["name"],
-                    index_type=index_data["index_type"],
-                    index_file=index_data.get("index_file"),
-                    embeddings_file=index_data["embeddings_file"],
-                )
-                for index_data in collection_data.get("indexes", [])
-            ]
+            indexes = []
+            for index_data in collection_data.get("indexes", []):
+                index_kwargs = {
+                    "name": index_data["name"],
+                    "index_type": index_data["index_type"],
+                    "index_file": index_data.get("index_file"),
+                    "embeddings_file": index_data["embeddings_file"],
+                    "default": index_data.get("default", False),
+                }
+                # Only pass model_name when set, so the IndexConfig field
+                # default applies rather than being overridden with None.
+                if "model_name" in index_data:
+                    index_kwargs["model_name"] = index_data["model_name"]
+                indexes.append(IndexConfig(**index_kwargs))
 
             collection_configs[collection_data["name"]] = CollectionConfig(
                 database_file=collection_data["database_file"],
