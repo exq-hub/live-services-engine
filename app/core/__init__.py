@@ -28,9 +28,10 @@ exceptions
     Hierarchical exception classes (`LSEException` and its subclasses)
     used throughout the application for structured error propagation.
 models
-    `ModelManager` for PyTorch/CLIP model lifecycle and device management,
-    and `ApplicationContainer` -- the central dependency-injection container
-    that wires together configuration, models, repositories, and services.
+    `CLIPModelManager`/`TextModelManager` for PyTorch model lifecycle and
+    device management, and `ApplicationContainer` -- the central
+    dependency-injection container that wires together configuration,
+    models, repositories, and services.
 indexes
     Abstract `BaseIndex` interface with concrete `FaissIndex` and `ZarrIndex`
     implementations for nearest-neighbour vector search.

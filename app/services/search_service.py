@@ -48,9 +48,9 @@ from ..core.exceptions import SearchError
 class SearchService:
     """Service for managing different search strategies."""
 
-    def __init__(self, model_manager, index_repository, metadata_repository):
-        self.model_manager = model_manager
-        """Shared `ModelManager` providing the CLIP text encoder and device."""
+    def __init__(self, clip_model_manager, index_repository, metadata_repository):
+        self.clip_model_manager = clip_model_manager
+        """Shared `CLIPModelManager` providing text encoders/tokenizers and the device."""
 
         self.index_repo = index_repository
         """Shared `IndexRepository` for vector nearest-neighbour lookups."""
@@ -60,9 +60,11 @@ class SearchService:
 
         self.strategies: Dict[str, SearchStrategy] = {
             "clip": CLIPSearchStrategy(
-                model_manager, index_repository, metadata_repository
+                clip_model_manager, index_repository, metadata_repository
             ),
-            "rf": RFSearchImpl(model_manager, index_repository, metadata_repository),
+            "rf": RFSearchImpl(
+                clip_model_manager, index_repository, metadata_repository
+            ),
             "faceted": FacetedSearchImpl(metadata_repository),
         }
         """Registry of available search strategies keyed by name (``clip``, ``rf``, ``faceted``)."""

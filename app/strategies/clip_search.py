@@ -17,19 +17,22 @@
 """CLIP text-to-image search strategy.
 
 Encodes a natural-language text query into the CLIP embedding space using
-the ``ViT-SO400M-14-SigLIP-384`` text encoder, then retrieves the *n*
-most similar media items from the collection's vector index.
+the collection's CLIP text encoder, then retrieves the *n* most similar
+media items from the collection's vector index.
 
 The search pipeline:
 
-1. **Text encoding** -- tokenize and forward through the CLIP text model
+1. **Model resolution** -- resolve which CLIP model to encode the query
+   with, from the collection's default index (real per-request index
+   selection lands in a later branch item).
+2. **Text encoding** -- tokenize and forward through that CLIP text model
    (FP16 on CUDA when available), L2-normalise the output.
-2. **Skip-set construction** -- translate ``seen``, ``excluded``, and
+3. **Skip-set construction** -- translate ``seen``, ``excluded``, and
    filter-rejected media IDs into index-space IDs so the index can skip
    them during search rather than requiring post-filtering.
-3. **Index search** -- delegate to `IndexRepository.search_clip` which
+4. **Index search** -- delegate to `IndexRepository.search_clip` which
    dispatches to the appropriate `BaseIndex` implementation.
-4. **ID mapping** -- translate the resulting index positions back to media
+5. **ID mapping** -- translate the resulting index positions back to media
    IDs via `DatabaseRepository.get_media_ids`.
 """
 
@@ -41,7 +44,7 @@ from typing import List, Optional
 import torch
 import numpy as np
 
-from app.core.models import ModelManager
+from app.core.models import CLIPModelManager
 from app.repositories.database_repository import DatabaseRepository
 from app.repositories.index_repository import IndexRepository
 
@@ -55,12 +58,12 @@ class CLIPSearchStrategy(TextSearchStrategy):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: CLIPModelManager,
         index_repository: IndexRepository,
         database_repository: DatabaseRepository,
     ):
-        self.model_manager: ModelManager = model_manager
-        """Model manager providing the CLIP text encoder and device."""
+        self.model_manager: CLIPModelManager = model_manager
+        """CLIP model manager providing text encoders/tokenizers and the device."""
 
         self.index_repo: IndexRepository = index_repository
         """Index repository for executing nearest-neighbour vector searches."""
@@ -83,8 +86,10 @@ class CLIPSearchStrategy(TextSearchStrategy):
     ) -> List[int]:
         """Execute CLIP text search."""
         try:
+            model_name = self._resolve_model_name(collection)
+
             # Encode text using CLIP. self._encode_text is an async handler than runs the CLIP text encoder in a thread pool to avoid blocking the main event loop.
-            text_features = await self._encode_text(text)
+            text_features = await self._encode_text(model_name, text)
 
             # Process exclusions
             excluded_set = self._build_excluded_set(collection, excluded)
@@ -100,9 +105,20 @@ class CLIPSearchStrategy(TextSearchStrategy):
                 f"CLIP search failed: {e}", {"collection": collection, "text": text}
             )
 
-    def _sync_encode_text(self, text: str) -> np.ndarray:
+    def _resolve_model_name(self, collection: str) -> str:
+        """Which CLIP model to encode the query with.
+
+        Uses the collection's default index for now; real per-request
+        index selection lands in a later branch item.
+        """
+        collection_config = self.model_manager.config.collection_configs[collection]
+        return collection_config.default_index.model_name
+
+    def _sync_encode_text(self, model_name: str, text: str) -> np.ndarray:
         "Synchronous text encoding function to be run in a thread pool."
         device = self.model_manager.device
+        tokenizer = self.model_manager.get_text_tokenizer(model_name)
+        text_model = self.model_manager.get_text_model(model_name)
 
         with (
             torch.inference_mode(),
@@ -112,15 +128,17 @@ class CLIPSearchStrategy(TextSearchStrategy):
                 else contextlib.nullcontext()
             ),
         ):
-            tokenized_text = self.model_manager.clip_text_tokenizer([text]).to(device)
-            text_features = self.model_manager.clip_text_model(tokenized_text)
+            tokenized_text = tokenizer([text]).to(device)
+            text_features = text_model(tokenized_text)
             text_features /= text_features.norm(dim=-1, keepdim=True)
             return text_features.detach().cpu().numpy()
 
-    async def _encode_text(self, text: str) -> np.ndarray:
+    async def _encode_text(self, model_name: str, text: str) -> np.ndarray:
         """Asynchronously encode text using CLIP by running the synchronous encoding function in a thread pool."""
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, partial(self._sync_encode_text, text))
+        return await loop.run_in_executor(
+            None, partial(self._sync_encode_text, model_name, text)
+        )
 
     def _build_excluded_set(self, collection: str, excluded: List[int]) -> set:
         """Build set of excluded items including related items."""
