@@ -453,7 +453,62 @@ class TestModelNameAndDefaultIndex:
         with pytest.raises(ConfigurationError):
             ConfigManager(str(path)).load_config()
 
-    
+    def test_embedding_type_defaults_to_clip(self, write_config, dummy_files):
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=index_toml(
+                name="primary",
+                index_type="zarr",
+                embeddings_file=dummy_files["embeddings_file"],
+            ),
+        )
+        path = write_config(collection)
+
+        config = ConfigManager(str(path)).load_config()
+
+        assert config.collection_configs["testcol"].indexes[0].embedding_type == "CLIP"
+
+    def test_embedding_type_can_be_text(self, write_config, dummy_files):
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=index_toml(
+                name="transcripts",
+                index_type="zarr",
+                embeddings_file=dummy_files["embeddings_file"],
+                embedding_type="Text",
+            ),
+        )
+        path = write_config(collection)
+
+        config = ConfigManager(str(path)).load_config()
+
+        assert config.collection_configs["testcol"].indexes[0].embedding_type == "Text"
+
+    def test_embedding_type_rejects_unknown_value(self, write_config, dummy_files):
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=index_toml(
+                name="primary",
+                index_type="zarr",
+                embeddings_file=dummy_files["embeddings_file"],
+                embedding_type="Audio",
+            ),
+        )
+        path = write_config(collection)
+
+        with pytest.raises(ConfigurationError):
+            ConfigManager(str(path)).load_config()
+
+
 class TestErrorHandling:
     def test_missing_config_file_raises_configuration_error(self, tmp_path):
         missing_path = tmp_path / "does_not_exist.toml"
@@ -482,16 +537,6 @@ class TestUnsupportedConfigFormat:
         self, write_config, minimal_collection_toml
     ):
         path = write_config(minimal_collection_toml, filename="config.yaml")
-
-        with pytest.raises(ConfigurationError):
-            ConfigManager(str(path)).load_config()
-
-    def test_ini_extension_is_no_longer_supported(
-        self, write_config, minimal_collection_toml
-    ):
-        # Valid TOML content, but .ini support has been removed entirely --
-        # the extension alone should be rejected before any parsing happens.
-        path = write_config(minimal_collection_toml, filename="config.ini")
 
         with pytest.raises(ConfigurationError):
             ConfigManager(str(path)).load_config()

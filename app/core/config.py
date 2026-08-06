@@ -100,6 +100,15 @@ class IndexConfig(BaseModel):
         "ViT-SO400M-14-SigLIP-384",
         description="Embedding model that produced this index's vectors.",
     )
+    embedding_type: str = Field(
+        "CLIP",
+        description=(
+            "Which embedding family model_name belongs to, e.g. 'CLIP' or "
+            "'Text'. Determines which model manager and search strategy can "
+            "serve this index -- deliberately independent of the specific "
+            "library used to load model_name."
+        ),
+    )
     default: bool = Field(
         False,
         description=(
@@ -129,6 +138,18 @@ class IndexConfig(BaseModel):
     def validate_embeddings_file(cls, v: str) -> str:
         if not os.path.exists(v):
             raise ValueError(f"Embeddings file does not exist: {v}")
+        return v
+
+    @field_validator("embedding_type")
+    @classmethod
+    def validate_embedding_type(cls, v: str) -> str:
+        # Only families with an actual model manager/strategy today. Extend
+        # as they're built (e.g. 'CBIR'/'SIFT' for hand-crafted features).
+        valid_types = {"CLIP", "Text"}
+        if v not in valid_types:
+            raise ValueError(
+                f"Invalid embedding_type: {v!r}. Must be one of {sorted(valid_types)}"
+            )
         return v
 
 
@@ -264,10 +285,13 @@ class ConfigManager:
                     "embeddings_file": index_data["embeddings_file"],
                     "default": index_data.get("default", False),
                 }
-                # Only pass model_name when set, so the IndexConfig field
-                # default applies rather than being overridden with None.
+                # Only pass model_name/embedding_type when set, so the
+                # IndexConfig field defaults apply rather than being
+                # overridden with None.
                 if "model_name" in index_data:
                     index_kwargs["model_name"] = index_data["model_name"]
+                if "embedding_type" in index_data:
+                    index_kwargs["embedding_type"] = index_data["embedding_type"]
                 indexes.append(IndexConfig(**index_kwargs))
 
             collection_configs[collection_data["name"]] = CollectionConfig(
