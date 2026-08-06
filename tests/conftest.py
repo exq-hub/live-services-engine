@@ -49,8 +49,14 @@ def index_toml(
     index_type: str,
     embeddings_file: str,
     index_file: Optional[str] = None,
+    model_name: Optional[str] = None,
+    default: Optional[bool] = None,
 ) -> str:
-    """Render a `[[collections.indexes]]` table."""
+    """Render a `[[collections.indexes]]` table.
+
+    `model_name` and `default` are omitted unless given, exercising the
+    schema's own defaults.
+    """
     lines = [
         "  [[collections.indexes]]",
         f'  name = "{name}"',
@@ -59,6 +65,10 @@ def index_toml(
     if index_file is not None:
         lines.append(f'  index_file = "{index_file}"')
     lines.append(f'  embeddings_file = "{embeddings_file}"')
+    if model_name is not None:
+        lines.append(f'  model_name = "{model_name}"')
+    if default is not None:
+        lines.append(f"  default = {str(default).lower()}")
     return "\n".join(lines)
 
 
