@@ -541,6 +541,16 @@ class TestUnsupportedConfigFormat:
         with pytest.raises(ConfigurationError):
             ConfigManager(str(path)).load_config()
 
+    def test_ini_extension_is_no_longer_supported(
+        self, write_config, minimal_collection_toml
+    ):
+        # Valid TOML content, but .ini support has been removed entirely --
+        # the extension alone should be rejected before any parsing happens.
+        path = write_config(minimal_collection_toml, filename="config.ini")
+
+        with pytest.raises(ConfigurationError):
+            ConfigManager(str(path)).load_config()
+
 
 class TestConfigManagerCaching:
     def test_config_property_lazily_loads_once(self, write_config, minimal_collection_toml):
