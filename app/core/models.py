@@ -252,19 +252,21 @@ class ApplicationContainer:
             # Load metadata
             database_repo.load_database(collection, collection_config.database_file)
 
-            # Load indices
-            if collection_config.index_type == "faiss":
+            # Load indices. Collections may declare multiple indexes, but only
+            # the first is wired up for search until index selection lands.
+            index_config = collection_config.indexes[0]
+            if index_config.index_type == "faiss":
                 index_repo.load_clip_index(
-                    collection, collection_config.clip_index_file, "faiss"
+                    collection, index_config.index_file, "faiss"
                 )
             else:
                 index_repo.load_clip_index(
-                    collection, collection_config.embeddings_file, "zarr"
+                    collection, index_config.embeddings_file, "zarr"
                 )
 
             # Load embeddings for relevance feedback
             index_repo.set_embeddings_zarr_path(
-                collection, collection_config.embeddings_file
+                collection, index_config.embeddings_file
             )
 
         self._initialized = True

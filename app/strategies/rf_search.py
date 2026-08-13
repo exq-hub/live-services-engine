@@ -40,6 +40,7 @@ from sklearn.linear_model import SGDClassifier
 from numpy.random import default_rng
 
 from app.repositories.database_repository import DatabaseRepository
+from app.repositories.index_repository import IndexRepository
 
 from .base import RFSearchStrategy
 from .clip_search import CLIPSearchStrategy
@@ -54,10 +55,10 @@ class RFSearchStrategy(RFSearchStrategy):
         self.model_manager = model_manager
         """Model manager providing the CLIP text encoder and device."""
 
-        self.index_repo = index_repository
+        self.index_repo: IndexRepository = index_repository
         """Index repository for executing nearest-neighbour vector searches."""
 
-        self.metadata_repo = metadata_repository
+        self.metadata_repo: DatabaseRepository = metadata_repository
         """Database repository for ID mapping, filters, and item lookups."""
 
         self.clip_search: CLIPSearchStrategy = CLIPSearchStrategy(

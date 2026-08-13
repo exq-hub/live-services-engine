@@ -1,0 +1,60 @@
+[default]
+# Device for running models: auto, cpu, cuda, mps, or cuda:N
+model_device = "auto"
+
+[server]
+# Server host and port settings
+host = "127.0.0.1"
+port = 8000
+reload = true
+
+[logging]
+# Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+level = "INFO"
+
+# ============================================================================
+# COLLECTION CONFIGURATIONS
+# Add a `[[collections]]` table for each collection, with one or more nested
+# `[[collections.indexes]]` tables. Set enabled = true to activate it.
+# ============================================================================
+
+# Zarr collection -- embeddings_file is used directly as the brute-force index:
+[[collections]]
+name = "collection1"
+enabled = true
+
+# --- Required ---
+database_file = "./data/collection1/collection1.db"
+thumbnail_media_url = "https://localhost:5001/collection1"
+original_media_url = "https://localhost:5001/collection1"
+
+# --- Optional: Logging ---
+# log_directory = "./logs/collection1/"
+
+  [[collections.indexes]]
+  name = "CLIP"
+  index_type = "zarr"
+  embeddings_file = "./data/collection1/embeddings.zipstore"
+
+  [[collections.indexes]]
+  name = "Text"
+  index_type = "zarr"
+  embeddings_file = "./data/collection1/embeddings.zarr"
+
+# FAISS collection -- separate ANN index and raw embeddings required. A
+# collection can declare more than one index (e.g. a second index over a
+# different embedding space, such as text transcripts) by adding another
+# `[[collections.indexes]]` table with its own unique `name`.
+# [[collections]]
+# name = "collection2"
+# enabled = true
+# database_file = "./data/collection2/collection2.db"
+# thumbnail_media_url = "https://localhost:5001/collection2"
+# original_media_url = "https://localhost:5001/collection2"
+# log_directory = "./logs/collection2/"
+#
+#   [[collections.indexes]]
+#   name = "CLIP"
+#   index_type = "faiss"
+#   index_file = "./data/collection2/clip_index.faiss"
+#   embeddings_file = "./data/collection2/embeddings.zip"

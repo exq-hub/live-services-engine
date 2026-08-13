@@ -110,6 +110,26 @@ class BaseIndex(ABC):
         self.index = None
 
 
+def open_zarr_array(path: Path) -> zarr.Array:
+    """Open a Zarr array from a `.zip`/`.zipstore` archive or a `.zarr` directory store.
+
+    Unwraps to the `embeddings` array if the store root is a `zarr.Group`.
+    Used both for the brute-force `ZarrIndex` search path and for reading
+    raw embeddings for relevance feedback (`IndexRepository.get_embeddings_array`)
+    """
+    suffix = path.suffix.lower()
+    if suffix in (".zip", ".zipstore"):
+        node = zarr.open(ZipStore(path, mode="r"), mode="r")
+    elif suffix == ".zarr":
+        node = zarr.open(path, mode="r")
+    else:
+        raise ValueError(f"Invalid file extension for the data model: {path}")
+
+    if isinstance(node, zarr.Group):
+        node = node["embeddings"]
+    return node
+
+
 class ZarrIndex(BaseIndex):
     """Brute-force dot-product search over Zarr-stored embeddings.
 
@@ -126,15 +146,7 @@ class ZarrIndex(BaseIndex):
         super().__init__()
 
     def load_index(self, model_path: Path):
-        if (
-            model_path.suffix.lower() == ".zip"
-            or model_path.suffix.lower() == ".zipstore"
-        ):
-            self.index = zarr.open(ZipStore(model_path, mode="r"), mode="r")
-        elif model_path.suffix.lower() == ".zarr":
-            self.index = zarr.open(model_path, mode="r")
-        else:
-            raise ValueError("Invalid file extension for the data model")
+        self.index = open_zarr_array(model_path)
 
         if isinstance(self.index, zarr.Group):
             self.index = self.index["embeddings"]
