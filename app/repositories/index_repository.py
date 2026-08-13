@@ -128,7 +128,10 @@ class IndexRepository:
             raise IndexError(f"No embeddings configured for collection: {collection}")
 
         try:
-            return open_zarr_array(Path(zarr_path))
+            # The raw Zarr embeddings array for this collection, used for
+            # relevance feedback rather than nearest-neighbour search.
+            emb_arr = open_zarr_array(Path(zarr_path))
+            return emb_arr
         except Exception as e:
             raise IndexError(
                 f"Failed to open embeddings array for collection {collection}: {e}"

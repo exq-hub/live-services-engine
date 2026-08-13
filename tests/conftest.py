@@ -104,55 +104,6 @@ def minimal_collection_toml(dummy_files: dict) -> str:
     )
 
 
-def legacy_ini_collection(
-    name: str,
-    database_file: str,
-    thumbnail_media_url: str,
-    original_media_url: str,
-    embeddings_file: str,
-    index_type: str = "zarr",
-    clip_index_file: Optional[str] = None,
-    index_name: Optional[str] = None,
-    enabled: bool = True,
-    log_directory: Optional[str] = None,
-) -> str:
-    """Render a legacy single-index `[CollectionName]` INI section.
-
-    `index_name` maps to the optional `IndexName` key, which names the
-    single index (and its DB id-tag namespace, e.g. "CLIP Index ID").
-    Left unset, it defaults to "CLIP" -- the common case -- but can be
-    overridden for collections built on a different embedding type.
-    """
-    lines = [
-        f"[{name}]",
-        f"Enabled = {enabled}",
-        f"IndexType = {index_type}",
-        f"EmbeddingsFile = {embeddings_file}",
-        f"DatabaseFile = {database_file}",
-        f"ThumbnailMediaURL = {thumbnail_media_url}",
-        f"OriginalMediaURL = {original_media_url}",
-    ]
-    if clip_index_file is not None:
-        lines.append(f"CLIPIndexFile = {clip_index_file}")
-    if index_name is not None:
-        lines.append(f"IndexName = {index_name}")
-    if log_directory is not None:
-        lines.append(f"LogDirectory = {log_directory}")
-    return "\n".join(lines)
-
-
-@pytest.fixture
-def minimal_collection_ini(dummy_files: dict) -> str:
-    """The smallest valid legacy single-index INI collection section."""
-    return legacy_ini_collection(
-        name="testcol",
-        database_file=dummy_files["database_file"],
-        thumbnail_media_url="https://localhost:5000/testcol",
-        original_media_url="https://localhost:5000/testcol",
-        embeddings_file=dummy_files["embeddings_file"],
-    )
-
-
 @pytest.fixture
 def write_config(tmp_path: Path):
     """Write config text to a file in tmp_path and return its Path."""

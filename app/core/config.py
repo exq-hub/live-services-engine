@@ -16,27 +16,10 @@
 
 """Configuration management with Pydantic validation.
 
-Loads application settings from a config file (default ``./data/config.ini``)
-and exposes them as validated Pydantic models. Two on-disk formats are
-supported, dispatched by file extension:
-
-- **``.toml``** -- the current format, and the one new deployments should
-  use. Each collection declares an explicit list of named indexes, so a
-  collection can hold more than one index/embedding representation.
-- **``.ini``** -- deprecated, retained only for basic single-index setups.
-  Each collection maps onto a single-element index list; the index name
-  defaults to ``"CLIP"`` (the common case) but can be overridden with an
-  ``IndexName`` key when the embedding isn't CLIP (e.g. a text-transcript
-  index).
-
-Note the two formats use different casing for both section/table names and
-keys, and this is intentional: TOML tables and keys are lowercase
-``snake_case`` (``[server]``, ``[logging]``, ``[default]``, ``model_device``,
-...), matching the Pydantic field names directly, while INI sections stay
-upper-case and keys stay ``PascalCase`` exactly as before -- ``[SERVER]``,
-``[LOGGING]``, ``[DEFAULT]`` for sections; ``IndexType``, ``DatabaseFile``,
-``ThumbnailMediaURL`` for keys, thus existing ``.ini`` files do not need to
-be rewritten to keep working.
+Loads application settings from a TOML config file (default
+``./data/config.toml``) and exposes them as validated Pydantic models.
+Each collection declares an explicit list of named indexes, so a
+collection can hold more than one index/embedding representation.
 
 The configuration is split into three tiers:
 
@@ -83,7 +66,6 @@ Example TOML layout::
       embeddings_file = "/data/transcript_embeddings.zarr"
 """
 
-import configparser
 import os
 import tomllib
 from pathlib import Path
@@ -201,28 +183,12 @@ class LSEConfig(BaseModel):
 class ConfigManager:
     """Manages configuration loading and validation."""
 
-    def __init__(self, config_path: Optional[str] = None):
-        self.config_path: Path = Path(config_path or self._resolve_default_path())
-        """Resolved path to the config file. Format is inferred from the extension."""
+    def __init__(self, config_path: str = "./data/config.toml"):
+        self.config_path: Path = Path(config_path)
+        """Resolved path to the TOML config file."""
 
         self._config: Optional[LSEConfig] = None
         """Cached parsed configuration, populated by `load_config`."""
-
-    @staticmethod
-    def _resolve_default_path() -> str:
-        """Pick a config path when none is given explicitly.
-
-        Probes for `./data/config.toml` then the deprecated
-        `./data/config.ini`, in that order, and returns whichever one
-        actually exists. This lets callers (e.g. `ApplicationContainer`)
-        always construct `ConfigManager()` with no arguments
-        """
-        candidates = ("./data/config.toml", "./data/config.ini")
-        for candidate in candidates:
-            if Path(candidate).exists():
-                return candidate
-
-        return candidates[0]
 
     def load_config(self) -> LSEConfig:
         """Load and validate configuration."""
@@ -233,16 +199,13 @@ class ConfigManager:
 
         suffix = self.config_path.suffix.lower()
         try:
-            if suffix == ".toml":
-                config_dict = self._parse_toml()
-            elif suffix == ".ini":
-                config_dict = self._parse_ini()
-            else:
+            if suffix != ".toml":
                 raise ConfigurationError(
                     f"Unsupported configuration file extension '{suffix}' for "
-                    f"{self.config_path}. Expected '.toml' (or deprecated '.ini')."
+                    f"{self.config_path}. Expected '.toml'."
                 )
 
+            config_dict = self._parse_toml()
             self._config = LSEConfig(**config_dict)
             return self._config
 
@@ -298,66 +261,6 @@ class ConfigManager:
         logging_section = data.get("logging")
         if logging_section:
             config_dict["log_level"] = logging_section.get("level", "INFO")
-
-        return config_dict
-
-    def _parse_ini(self) -> dict:
-        """Parse the deprecated single-index INI format into an `LSEConfig` kwargs dict.
-
-        Each collection section maps onto a single-element `indexes` list.
-        The index name comes from the optional `IndexName` key, defaulting
-        to "CLIP". Sections stay upper-case and keys stay PascalCase as in
-        the original format (`[SERVER]`, `IndexType`, `DatabaseFile`, ...).
-        """
-        parser = configparser.ConfigParser()
-        parser.read(self.config_path)
-
-        default_section = parser["DEFAULT"]
-        reserved_sections = {"DEFAULT", "SERVER", "LOGGING"}
-        collection_configs: Dict[str, CollectionConfig] = {}
-
-        for collection_name in parser.sections():
-            if collection_name in reserved_sections:
-                continue
-
-            section = parser[collection_name]
-            if section.get("Enabled", "False").lower() != "true":
-                continue
-
-            index_config = IndexConfig(
-                name=section.get("IndexName", "CLIP"),
-                index_type=section["IndexType"],
-                index_file=section.get("CLIPIndexFile"),
-                embeddings_file=section["EmbeddingsFile"],
-            )
-
-            collection_configs[collection_name] = CollectionConfig(
-                database_file=section["DatabaseFile"],
-                thumbnail_media_url=section["ThumbnailMediaURL"],
-                original_media_url=section["OriginalMediaURL"],
-                log_directory=section.get("LogDirectory", "./logs/"),
-                indexes=[index_config],
-            )
-
-        config_dict = {
-            "model_device": default_section.get("ModelDevice", "auto"),
-            "collections": list(collection_configs.keys()),
-            "collection_configs": collection_configs,
-        }
-
-        if "SERVER" in parser:
-            server_section = parser["SERVER"]
-            config_dict.update(
-                {
-                    "host": server_section.get("Host", "127.0.0.1"),
-                    "port": int(server_section.get("Port", 8000)),
-                    "reload": server_section.getboolean("Reload", True),
-                }
-            )
-
-        if "LOGGING" in parser:
-            logging_section = parser["LOGGING"]
-            config_dict["log_level"] = logging_section.get("Level", "INFO")
 
         return config_dict
 

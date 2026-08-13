@@ -15,13 +15,11 @@
 
 """Tests for the TOML-based ConfigManager.
 
-This is the target behavior for the INI -> TOML migration: same
-validated `LSEConfig`/`CollectionConfig` semantics, but parsed
-from TOML, and with each collection holding a list of index definitions
-(`IndexConfig`) instead of flat index fields. Only one index per
-collection is exercised end-to-end elsewhere in the app for now but the
-schema already stores indexes as a list so that follow-up work doesn't
-need a second migration.
+Each collection holds a list of index definitions (`IndexConfig`)
+instead of flat index fields. Only one index per collection is
+exercised end-to-end elsewhere in the app for now, but the schema
+already stores indexes as a list so that follow-up work adding
+multi-index support doesn't need a schema migration.
 """
 
 import pytest
@@ -29,7 +27,7 @@ import pytest
 from app.core.config import ConfigManager
 from app.core.exceptions import ConfigurationError
 
-from .conftest import collection_toml, index_toml, legacy_ini_collection
+from .conftest import collection_toml, index_toml
 
 
 class TestMinimalConfig:
@@ -329,133 +327,21 @@ class TestErrorHandling:
             ConfigManager(str(path)).load_config()
 
 
-class TestLegacyIniConfig:
-    """The pre-existing single-index `.ini` format must keep working.
-
-    It's adapted onto the same `indexes: List[IndexConfig]` shape as TOML
-    (a one-element list) rather than being removed -- deprecated, but
-    still the easiest path for a basic single-index collection.
-    """
-
-    def test_loads_single_index_collection_from_ini(
-        self, write_config, minimal_collection_ini, dummy_files
-    ):
-        path = write_config(minimal_collection_ini, filename="config.ini")
-
-        config = ConfigManager(str(path)).load_config()
-
-        assert config.collections == ["testcol"]
-        collection = config.collection_configs["testcol"]
-        assert len(collection.indexes) == 1
-        assert collection.indexes[0].name == "CLIP"
-        assert collection.indexes[0].index_type == "zarr"
-        assert collection.indexes[0].embeddings_file == dummy_files["embeddings_file"]
-        assert collection.indexes[0].index_file is None
-
-    def test_index_name_defaults_to_clip_but_can_be_overridden(
-        self, write_config, dummy_files
-    ):
-        collection = legacy_ini_collection(
-            name="transcripts",
-            database_file=dummy_files["database_file"],
-            thumbnail_media_url="https://localhost:5000/transcripts",
-            original_media_url="https://localhost:5000/transcripts",
-            embeddings_file=dummy_files["embeddings_file"],
-            index_name="Text",
-        )
-        path = write_config(collection, filename="config.ini")
-
-        config = ConfigManager(str(path)).load_config()
-
-        assert config.collection_configs["transcripts"].indexes[0].name == "Text"
-
-    def test_applies_same_defaults_as_toml(self, write_config, minimal_collection_ini):
-        path = write_config(minimal_collection_ini, filename="config.ini")
-
-        config = ConfigManager(str(path)).load_config()
-
-        assert config.model_device == "auto"
-        assert config.host == "127.0.0.1"
-        assert config.port == 8000
-        assert config.reload is True
-        assert config.log_level == "INFO"
-
-    def test_disabled_collection_is_excluded(
-        self, write_config, dummy_files, minimal_collection_ini
-    ):
-        disabled = legacy_ini_collection(
-            name="disabledcol",
-            database_file=dummy_files["database_file"],
-            thumbnail_media_url="https://localhost:5000/disabled",
-            original_media_url="https://localhost:5000/disabled",
-            embeddings_file=dummy_files["embeddings_file"],
-            enabled=False,
-        )
-        path = write_config(
-            minimal_collection_ini + "\n\n" + disabled, filename="config.ini"
-        )
-
-        config = ConfigManager(str(path)).load_config()
-
-        assert config.collections == ["testcol"]
-        assert "disabledcol" not in config.collection_configs
-
-    def test_faiss_requires_clip_index_file(self, write_config, dummy_files):
-        collection = legacy_ini_collection(
-            name="testcol",
-            database_file=dummy_files["database_file"],
-            thumbnail_media_url="https://localhost:5000/testcol",
-            original_media_url="https://localhost:5000/testcol",
-            embeddings_file=dummy_files["embeddings_file"],
-            index_type="faiss",
-        )
-        path = write_config(collection, filename="config.ini")
-
-        with pytest.raises(ConfigurationError):
-            ConfigManager(str(path)).load_config()
-
-    def test_faiss_with_clip_index_file_loads(self, write_config, dummy_files):
-        collection = legacy_ini_collection(
-            name="testcol",
-            database_file=dummy_files["database_file"],
-            thumbnail_media_url="https://localhost:5000/testcol",
-            original_media_url="https://localhost:5000/testcol",
-            embeddings_file=dummy_files["embeddings_file"],
-            index_type="faiss",
-            clip_index_file=dummy_files["index_file"],
-        )
-        path = write_config(collection, filename="config.ini")
-
-        config = ConfigManager(str(path)).load_config()
-
-        collection_config = config.collection_configs["testcol"]
-        assert len(collection_config.indexes) == 1
-        assert collection_config.indexes[0].index_type == "faiss"
-        assert collection_config.indexes[0].index_file == dummy_files["index_file"]
-
-    def test_missing_required_field_raises_configuration_error(
-        self, write_config, dummy_files
-    ):
-        # Hand-rolled section missing DatabaseFile.
-        text = (
-            "[testcol]\n"
-            "Enabled = True\n"
-            "IndexType = zarr\n"
-            f"EmbeddingsFile = {dummy_files['embeddings_file']}\n"
-            "ThumbnailMediaURL = https://localhost:5000/testcol\n"
-            "OriginalMediaURL = https://localhost:5000/testcol\n"
-        )
-        path = write_config(text, filename="config.ini")
-
-        with pytest.raises(ConfigurationError):
-            ConfigManager(str(path)).load_config()
-
-
 class TestUnsupportedConfigFormat:
     def test_unrecognized_extension_raises_configuration_error(
         self, write_config, minimal_collection_toml
     ):
         path = write_config(minimal_collection_toml, filename="config.yaml")
+
+        with pytest.raises(ConfigurationError):
+            ConfigManager(str(path)).load_config()
+
+    def test_ini_extension_is_no_longer_supported(
+        self, write_config, minimal_collection_toml
+    ):
+        # Valid TOML content, but .ini support has been removed entirely --
+        # the extension alone should be rejected before any parsing happens.
+        path = write_config(minimal_collection_toml, filename="config.ini")
 
         with pytest.raises(ConfigurationError):
             ConfigManager(str(path)).load_config()
