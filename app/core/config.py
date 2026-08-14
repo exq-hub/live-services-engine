@@ -109,6 +109,17 @@ class IndexConfig(BaseModel):
             "library used to load model_name."
         ),
     )
+    source_type: str = Field(
+        "Image",
+        description=(
+            "Which kind of media this index's positions correspond to: "
+            "'Image', 'Video', 'Audio', 'Text', or 'Other'. Matches a row in "
+            "the database's source_types table, and picks both which medias "
+            "this index maps ('Text' for an index over transcripts, "
+            "'Image' for one over keyframes) and the '<name> Index ID' "
+            "tagset's expected source_type."
+        ),
+    )
     default: bool = Field(
         False,
         description=(
@@ -149,6 +160,17 @@ class IndexConfig(BaseModel):
         if v not in valid_types:
             raise ValueError(
                 f"Invalid embedding_type: {v!r}. Must be one of {sorted(valid_types)}"
+            )
+        return v
+
+    @field_validator("source_type")
+    @classmethod
+    def validate_source_type(cls, v: str) -> str:
+        # Matches the database's source_types table default rows.
+        valid_source_types = {"Image", "Video", "Audio", "Text", "Other"}
+        if v not in valid_source_types:
+            raise ValueError(
+                f"Invalid source_type: {v!r}. Must be one of {sorted(valid_source_types)}"
             )
         return v
 
@@ -294,13 +316,15 @@ class ConfigManager:
                     "embeddings_file": index_data["embeddings_file"],
                     "default": index_data.get("default", False),
                 }
-                # Only pass model_name/embedding_type when set, so the
-                # IndexConfig field defaults apply rather than being
+                # Only pass model_name/embedding_type/source_type when set,
+                # so the IndexConfig field defaults apply rather than being
                 # overridden with None.
                 if "model_name" in index_data:
                     index_kwargs["model_name"] = index_data["model_name"]
                 if "embedding_type" in index_data:
                     index_kwargs["embedding_type"] = index_data["embedding_type"]
+                if "source_type" in index_data:
+                    index_kwargs["source_type"] = index_data["source_type"]
                 indexes.append(IndexConfig(**index_kwargs))
 
             collection_configs[collection_data["name"]] = CollectionConfig(

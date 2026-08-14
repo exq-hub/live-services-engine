@@ -320,7 +320,7 @@ class ApplicationContainer:
     def database_repository(self) -> DatabaseRepository:
         """Get the database repository."""
         if self._database_repo is None:
-            self._database_repo = DatabaseRepository()
+            self._database_repo = DatabaseRepository(self.config_manager.config)
         return self._database_repo
 
     @property

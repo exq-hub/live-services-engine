@@ -169,15 +169,11 @@ class CLIPSearchStrategy(TextSearchStrategy):
         skip_ids = set()
         if len(seen_set) != 0:
             skip_ids.update(
-                self.database_repo.get_index_ids(
-                    collection, list(seen_set), index="clip"
-                )
+                self.database_repo.get_index_ids(collection, list(seen_set))
             )
         if len(excluded_set) != 0:
             skip_ids.update(
-                self.database_repo.get_index_ids(
-                    collection, list(excluded_set), index="clip"
-                )
+                self.database_repo.get_index_ids(collection, list(excluded_set))
             )
 
         if filters:
@@ -186,9 +182,7 @@ class CLIPSearchStrategy(TextSearchStrategy):
             # NOTE: Can use the size of passed_ids to determine if index search is needed
             #       If it is lower than a certain threshold we can search through the subset with
             #       the zarr embeddings array directly
-            index_passed_ids = self.database_repo.get_index_ids(
-                collection, passed_ids, index="clip"
-            )
+            index_passed_ids = self.database_repo.get_index_ids(collection, passed_ids)
             index_skip_ids = set(range(total_items)) - set(index_passed_ids)
             skip_ids.update(index_skip_ids)
 

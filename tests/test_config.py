@@ -545,6 +545,61 @@ class TestModelNameAndDefaultIndex:
 
         assert config.collection_configs["testcol"].preload_all_indexes is True
 
+    def test_source_type_defaults_to_image(self, write_config, dummy_files):
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=index_toml(
+                name="primary",
+                index_type="zarr",
+                embeddings_file=dummy_files["embeddings_file"],
+            ),
+        )
+        path = write_config(collection)
+
+        config = ConfigManager(str(path)).load_config()
+
+        assert config.collection_configs["testcol"].indexes[0].source_type == "Image"
+
+    def test_source_type_can_be_set_to_a_known_value(self, write_config, dummy_files):
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=index_toml(
+                name="transcripts",
+                index_type="zarr",
+                embeddings_file=dummy_files["embeddings_file"],
+                source_type="Text",
+            ),
+        )
+        path = write_config(collection)
+
+        config = ConfigManager(str(path)).load_config()
+
+        assert config.collection_configs["testcol"].indexes[0].source_type == "Text"
+
+    def test_source_type_rejects_unknown_value(self, write_config, dummy_files):
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=index_toml(
+                name="primary",
+                index_type="zarr",
+                embeddings_file=dummy_files["embeddings_file"],
+                source_type="Smell",
+            ),
+        )
+        path = write_config(collection)
+
+        with pytest.raises(ConfigurationError):
+            ConfigManager(str(path)).load_config()
+
 
 class TestErrorHandling:
     def test_missing_config_file_raises_configuration_error(self, tmp_path):
