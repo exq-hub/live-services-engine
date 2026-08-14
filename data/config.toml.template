@@ -46,12 +46,15 @@ original_media_url = "https://localhost:5001/collection1"
   embeddings_file = "./data/collection1/embeddings.zipstore"
   default = true
 
+  # source_type tells the database which kind of media this index maps to
+  # ("Image", "Video", "Audio", "Text", or "Other"); defaults to "Image".
   [[collections.indexes]]
-  name = "Text"
+  name = "Transcripts"
   index_type = "zarr"
   embeddings_file = "./data/collection1/embeddings.zarr"
   embedding_type = "Text"
   model_name = "your-sentence-transformers-model"
+  source_type = "Text"
 
 # FAISS collection -- separate ANN index and raw embeddings required. A
 # collection can declare more than one index (e.g. a second index over a
