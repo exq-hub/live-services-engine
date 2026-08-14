@@ -110,9 +110,11 @@ class ModelManager(ABC):
     """Base class for embedding-family-specific model managers.
 
     Each subclass owns one `IndexConfig.embedding_type` family (e.g.
-    "CLIP" or "Text") and implements `_load_text_model` for however
-    that family's models are actually loaded. `initialize_models` loads
-    one model per distinct `model_name` among that family's indexes.
+    "CLIP" or "Text") and implements `_load_text_encoder` for however
+    that family's models are actually loaded. `initialize_models`
+    eagerly loads each collection's default-index encoder (plus every
+    matching index in a `preload_all_indexes` collection); anything
+    else loads lazily the first time `get_text_encoder` is called for it.
     """
 
     embedding_type: ClassVar[str]
@@ -125,8 +127,8 @@ class ModelManager(ABC):
         self._device: Optional[torch.device] = None
         """Lazily resolved PyTorch device (CPU, CUDA, or MPS)."""
 
-        self._text_models: Dict[str, Any] = {}
-        """Loaded models keyed by `model_name`."""
+        self._text_encoders: Dict[str, Any] = {}
+        """Loaded text encoders keyed by `model_name`."""
 
     @property
     def device(self) -> torch.device:
@@ -135,21 +137,25 @@ class ModelManager(ABC):
             self._device = resolve_device(self.config.model_device)
         return self._device
 
-    def get_text_model(self, model_name: str) -> Any:
-        """Get the loaded model for `model_name`."""
-        if model_name not in self._text_models:
-            raise ModelLoadError(
-                f"{self.embedding_type} text model not loaded: {model_name!r}"
-            )
-        return self._text_models[model_name]
+    def get_text_encoder(self, model_name: str) -> Any:
+        """Get the text encoder for `model_name`, loading it on demand if not already cached."""
+        if model_name not in self._text_encoders:
+            logger.info(f"Loading {self.embedding_type} model: {model_name}")
+            self._text_encoders[model_name] = self._load_text_encoder(model_name)
+            self._after_load_text_encoder(model_name)
+        return self._text_encoders[model_name]
 
     def initialize_models(self) -> None:
-        """Load one model per distinct `model_name` among this family's indexes."""
+        """Eagerly load this family's encoders for indexes that should preload at startup.
+
+        That's each collection's default index (when it belongs to this
+        family), plus every matching index in a `preload_all_indexes`
+        collection. Anything else loads lazily via `get_text_encoder` on
+        first use.
+        """
         try:
             for model_name in sorted(self._configured_model_names()):
-                logger.info(f"Loading {self.embedding_type} model: {model_name}")
-                self._text_models[model_name] = self._load_text_model(model_name)
-                self._after_load_model(model_name)
+                self.get_text_encoder(model_name)
 
             logger.info(f"All {self.embedding_type} models initialized successfully")
 
@@ -160,21 +166,28 @@ class ModelManager(ABC):
             ) from e
 
     def _configured_model_names(self) -> Set[str]:
-        """Distinct model_names among this manager's embedding_type indexes."""
-        return {
-            index.model_name
-            for collection_config in self.config.collection_configs.values()
-            for index in collection_config.indexes
-            if index.embedding_type == self.embedding_type
-        }
+        """model_names to eagerly preload, restricted to this manager's embedding_type."""
+        names = set()
+        for collection_config in self.config.collection_configs.values():
+            default_index = collection_config.default_index
+            if default_index.embedding_type == self.embedding_type:
+                names.add(default_index.model_name)
 
-    def _after_load_model(self, model_name: str) -> None:
+            if collection_config.preload_all_indexes:
+                names.update(
+                    index.model_name
+                    for index in collection_config.indexes
+                    if index.embedding_type == self.embedding_type
+                )
+        return names
+
+    def _after_load_text_encoder(self, model_name: str) -> None:
         """Optional hook for subclasses needing extra per-model setup (e.g. a tokenizer)."""
         pass
 
     @abstractmethod
-    def _load_text_model(self, model_name: str) -> Any:
-        """Load a single model by name. Implemented per embedding family."""
+    def _load_text_encoder(self, model_name: str) -> Any:
+        """Load a single text encoder by name. Implemented per embedding family."""
         ...
 
 
@@ -186,23 +199,22 @@ class CLIPModelManager(ModelManager):
     def __init__(self, config: LSEConfig):
         super().__init__(config)
 
-        self._text_tokenizers: Dict[str, Any] = {}
-        """Loaded tokenizers keyed by `model_name`, matching `_text_models`."""
+        self._tokenizers: Dict[str, Any] = {}
+        """Loaded tokenizers keyed by `model_name`, matching `_text_encoders`."""
 
-    def get_text_tokenizer(self, model_name: str) -> Any:
-        """Get the loaded tokenizer for `model_name`."""
-        if model_name not in self._text_tokenizers:
-            raise ModelLoadError(f"CLIP tokenizer not loaded: {model_name!r}")
-        return self._text_tokenizers[model_name]
+    def get_tokenizer(self, model_name: str) -> Any:
+        """Get the tokenizer for `model_name`, loading the encoder on demand if needed."""
+        self.get_text_encoder(model_name)
+        return self._tokenizers[model_name]
 
-    def _after_load_model(self, model_name: str) -> None:
-        self._text_tokenizers[model_name] = self._load_text_tokenizer(model_name)
+    def _after_load_text_encoder(self, model_name: str) -> None:
+        self._tokenizers[model_name] = self._load_tokenizer(model_name)
 
     @timer_decorator
-    def _load_text_model(self, model_name: str) -> torch.nn.Module:
+    def _load_text_encoder(self, model_name: str) -> torch.nn.Module:
         """Load a CLIP text encoder, caching the extracted text tower on disk."""
         try:
-            cache_path = self._text_model_cache_path(model_name)
+            cache_path = self._text_encoder_cache_path(model_name)
 
             if not cache_path.exists():
                 logger.info(f"{model_name} not found locally, downloading...")
@@ -224,7 +236,7 @@ class CLIPModelManager(ModelManager):
             raise ModelLoadError(f"Failed to load CLIP text model {model_name!r}: {e}")
 
     @timer_decorator
-    def _load_text_tokenizer(self, model_name: str) -> Any:
+    def _load_tokenizer(self, model_name: str) -> Any:
         """Load the CLIP tokenizer matching `model_name`."""
         try:
             return open_clip.get_tokenizer(model_name)
@@ -234,7 +246,7 @@ class CLIPModelManager(ModelManager):
             )
 
     @staticmethod
-    def _text_model_cache_path(model_name: str) -> Path:
+    def _text_encoder_cache_path(model_name: str) -> Path:
         """On-disk cache path for the extracted text tower of `model_name`."""
         safe_name = model_name.replace("/", "_")
         return Path(f"./data/model_text_{safe_name}.pth")
@@ -252,7 +264,7 @@ class TextModelManager(ModelManager):
     embedding_type: ClassVar[str] = "Text"
 
     @timer_decorator
-    def _load_text_model(self, model_name: str) -> SentenceTransformer:
+    def _load_text_encoder(self, model_name: str) -> SentenceTransformer:
         try:
             return SentenceTransformer(model_name, device=str(self.device))
         except Exception as e:
@@ -315,7 +327,7 @@ class ApplicationContainer:
     def index_repository(self) -> IndexRepository:
         """Get the index repository."""
         if self._index_repo is None:
-            self._index_repo = IndexRepository()
+            self._index_repo = IndexRepository(self.config_manager.config)
         return self._index_repo
 
     def initialize(self):
@@ -346,22 +358,15 @@ class ApplicationContainer:
             # Load metadata
             database_repo.load_database(collection, collection_config.database_file)
 
-            # Load indices. Collections may declare multiple indexes, but only
-            # the first is wired up for search until index selection lands.
-            index_config = collection_config.indexes[0]
-            if index_config.index_type == "faiss":
-                index_repo.load_clip_index(
-                    collection, index_config.index_file, "faiss"
-                )
-            else:
-                index_repo.load_clip_index(
-                    collection, index_config.embeddings_file, "zarr"
-                )
+            # Always preload the default index; the rest load lazily on
+            # first use unless this collection opts into preload_all_indexes.
+            default_index = collection_config.default_index
+            index_repo.preload(collection, default_index.name)
 
-            # Load embeddings for relevance feedback
-            index_repo.set_embeddings_zarr_path(
-                collection, index_config.embeddings_file
-            )
+            if collection_config.preload_all_indexes:
+                for index in collection_config.indexes:
+                    if index.name != default_index.name:
+                        index_repo.preload(collection, index.name)
 
         self._initialized = True
 

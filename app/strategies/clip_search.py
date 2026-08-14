@@ -117,8 +117,8 @@ class CLIPSearchStrategy(TextSearchStrategy):
     def _sync_encode_text(self, model_name: str, text: str) -> np.ndarray:
         "Synchronous text encoding function to be run in a thread pool."
         device = self.model_manager.device
-        tokenizer = self.model_manager.get_text_tokenizer(model_name)
-        text_model = self.model_manager.get_text_model(model_name)
+        tokenizer = self.model_manager.get_tokenizer(model_name)
+        text_model = self.model_manager.get_text_encoder(model_name)
 
         with (
             torch.inference_mode(),

@@ -16,21 +16,31 @@
 
 """Repository for managing vector search indices and embedding arrays.
 
-`IndexRepository` owns the lifecycle of all per-collection vector indices
-(FAISS or Zarr) and embedding stores used by the search strategies. It
-provides a uniform interface for:
+`IndexRepository` owns the lifecycle of all per-collection, per-index vector
+indices (FAISS or Zarr) and embedding stores used by the search strategies.
+It holds the validated `LSEConfig` and resolves/loads a given
+(collection, index_name) pair straight from it on a cache miss -- there is
+no separate imperative "load" step. A collection's default index is loaded
+eagerly at startup (see `ApplicationContainer.initialize`); any other index
+loads lazily the first time something asks for it (e.g. `search_clip`,
+`get_embeddings_array`), or eagerly at startup too if the collection sets
+`preload_all_indexes`.
 
-- Loading and caching CLIP indices from disk.
+It provides a uniform interface for:
+
+- Resolving and loading indices from config, cached by (collection, index_name).
 - Executing nearest-neighbour searches with ``skip_ids`` filtering.
 - Opening Zarr embedding arrays for use by the relevance-feedback strategy.
 - Checking query-state support for resumable searches (future capability).
 """
 
-import zarr
 from pathlib import Path
 from typing import Dict, Optional, Tuple
-import numpy as np
 
+import numpy as np
+import zarr
+
+from app.core.config import IndexConfig, LSEConfig
 from app.core.indexes import BaseIndex, FaissIndex, ZarrIndex, open_zarr_array
 
 from ..core.exceptions import IndexError
@@ -39,66 +49,106 @@ from ..core.exceptions import IndexError
 class IndexRepository:
     """Repository for managing vector indices and embeddings."""
 
-    def __init__(self):
-        self._clip_indices: Dict[str, BaseIndex] = {}
-        """Per-collection CLIP vector indices keyed by collection name."""
+    def __init__(self, config: LSEConfig):
+        self.config = config
+        """Validated LSE configuration, used to resolve and load indexes on demand."""
 
-        self._embeddings_zarr: Dict[str, str] = {}
-        """Per-collection file paths to Zarr embedding arrays for relevance feedback."""
+        self._clip_indices: Dict[Tuple[str, str], BaseIndex] = {}
+        """Loaded ANN indexes keyed by (collection, index_name)."""
 
-    def load_clip_index(
-        self, collection: str, index_path: str, index_type="faiss"
-    ) -> BaseIndex:
-        """Load CLIP index for a collection."""
+        self._embeddings_zarr: Dict[Tuple[str, str], str] = {}
+        """Loaded embeddings file paths keyed by (collection, index_name), for relevance feedback."""
+
+    def _resolve_index_name(self, collection: str, index_name: Optional[str]) -> str:
+        """Default to the collection's default index when none is given."""
+        if index_name is not None:
+            return index_name
         try:
-            if collection in self._clip_indices:
-                return self._clip_indices[collection]
+            collection_config = self.config.collection_configs[collection]
+        except KeyError:
+            raise IndexError(f"Unknown collection: {collection!r}")
+        return collection_config.default_index.name
+
+    def _get_index_config(self, collection: str, index_name: str) -> IndexConfig:
+        try:
+            collection_config = self.config.collection_configs[collection]
+        except KeyError:
+            raise IndexError(f"Unknown collection: {collection!r}")
+
+        for index in collection_config.indexes:
+            if index.name == index_name:
+                return index
+
+        raise IndexError(
+            f"No index named {index_name!r} configured for collection {collection!r}"
+        )
+
+    def get_clip_index(
+        self, collection: str, index_name: Optional[str] = None
+    ) -> BaseIndex:
+        """Get the ANN index for collection/index_name, loading it on demand."""
+        index_name = self._resolve_index_name(collection, index_name)
+        key = (collection, index_name)
+        if key in self._clip_indices:
+            return self._clip_indices[key]
+
+        index_config = self._get_index_config(collection, index_name)
+        try:
+            if index_config.index_type == "faiss":
+                index_path = index_config.index_file
+                index_obj: BaseIndex = FaissIndex()
+            elif index_config.index_type == "zarr":
+                index_path = index_config.embeddings_file
+                index_obj = ZarrIndex()
+            elif index_config.index_type == "ecp":
+                raise IndexError("eCP is not currently supported for indices.")
+            else:
+                raise IndexError(f"Unsupported index type: {index_config.index_type}")
 
             index_file = Path(index_path)
             if not index_file.exists():
                 raise IndexError(f"CLIP index file not found: {index_path}")
 
-            if index_type == "faiss":
-                self._clip_indices[collection] = FaissIndex()
-            elif index_type == "zarr":
-                self._clip_indices[collection] = ZarrIndex()
-            elif index_type == "ecp":
-                raise IndexError("eCP is not currently supported for indices.")
-            else:
-                raise IndexError(f"Unsupported index type: {index_type}")
-
-            self._clip_indices[collection].load_index(index_file)
-
-            return self._clip_indices[collection]
+            index_obj.load_index(index_file)
 
         except Exception as e:
-            raise IndexError(f"Failed to load CLIP index from {index_path}: {e}")
+            raise IndexError(
+                f"Failed to load index {index_name!r} for collection {collection!r}: {e}"
+            )
 
-    def set_embeddings_zarr_path(self, collection: str, embeddings_path: str):
-        """Set the path to embeddings zarr file for a collection."""
-        embeddings_file = Path(embeddings_path)
-        if not embeddings_file.exists():
-            raise IndexError(f"Embeddings file not found: {embeddings_path}")
+        self._clip_indices[key] = index_obj
+        return index_obj
 
-        self._embeddings_zarr[collection] = str(embeddings_file)
+    def get_embeddings_zarr_path(
+        self, collection: str, index_name: Optional[str] = None
+    ) -> str:
+        """Get the embeddings file path for collection/index_name, resolving it on demand."""
+        index_name = self._resolve_index_name(collection, index_name)
+        key = (collection, index_name)
+        if key not in self._embeddings_zarr:
+            index_config = self._get_index_config(collection, index_name)
+            embeddings_file = Path(index_config.embeddings_file)
+            if not embeddings_file.exists():
+                raise IndexError(
+                    f"Embeddings file not found: {index_config.embeddings_file}"
+                )
+            self._embeddings_zarr[key] = str(embeddings_file)
 
-    def get_clip_index(self, collection: str) -> Optional[BaseIndex]:
-        """Get CLIP index for a collection."""
-        return self._clip_indices.get(collection)
+        return self._embeddings_zarr[key]
 
-    def get_embeddings_zarr_path(self, collection: str) -> Optional[str]:
-        """Get embeddings zarr path for a collection."""
-        return self._embeddings_zarr.get(collection)
+    def preload(self, collection: str, index_name: Optional[str] = None) -> None:
+        """Eagerly load the ANN index and embeddings path for collection/index_name."""
+        self.get_clip_index(collection, index_name)
+        self.get_embeddings_zarr_path(collection, index_name)
 
-    def is_query_in_state_clip(self, collection: str, state: int) -> bool:
-        """Check if a query state exists for a collection."""
+    def is_query_in_state_clip(
+        self, collection: str, state: int, index_name: Optional[str] = None
+    ) -> bool:
+        """Check if a query state exists for collection/index_name."""
+        index = self.get_clip_index(collection, index_name)
 
-        index = self.get_clip_index(collection)
-        if index is None:
-            raise IndexError(f"CLIP index not loaded for collection: {collection}")
-
-        if self._clip_indices[collection].query_state_support:
-            return self._clip_indices[collection].is_query_in_state(state)
+        if index.query_state_support:
+            return index.is_query_in_state(state)
 
         return False
 
@@ -108,12 +158,11 @@ class IndexRepository:
         query_vector: np.ndarray,
         k: int,
         skip_ids: set[int] = set(),
+        index_name: Optional[str] = None,
         # , q_id: int = -1, resume: bool = False
     ) -> Tuple[int, np.ndarray]:
-        """Search CLIP index."""
-        index = self.get_clip_index(collection)
-        if index is None:
-            raise IndexError(f"CLIP index not loaded for collection: {collection}")
+        """Search the ANN index for collection/index_name."""
+        index = self.get_clip_index(collection, index_name)
 
         try:
             _, indices, distances = index.search(query_vector, k, skip_ids=skip_ids)
@@ -121,15 +170,13 @@ class IndexRepository:
         except Exception as e:
             raise IndexError(f"CLIP search failed for collection {collection}: {e}")
 
-    def get_embeddings_array(self, collection: str) -> zarr.Array:
-        """Get zarr embeddings array for a collection."""
-        zarr_path = self.get_embeddings_zarr_path(collection)
-        if zarr_path is None:
-            raise IndexError(f"No embeddings configured for collection: {collection}")
+    def get_embeddings_array(
+        self, collection: str, index_name: Optional[str] = None
+    ) -> zarr.Array:
+        """Get the raw Zarr embeddings array for collection/index_name."""
+        zarr_path = self.get_embeddings_zarr_path(collection, index_name)
 
         try:
-            # The raw Zarr embeddings array for this collection, 
-            # primarily used for relevance feedback / content based search.
             emb_arr = open_zarr_array(Path(zarr_path))
             return emb_arr
         except Exception as e:
@@ -140,8 +187,9 @@ class IndexRepository:
     def clear_cache(self, collection: Optional[str] = None):
         """Clear cached indices for a collection or all collections."""
         if collection:
-            self._clip_indices.pop(collection, None)
-            self._embeddings_zarr.pop(collection, None)
+            for cache in (self._clip_indices, self._embeddings_zarr):
+                for key in [k for k in cache if k[0] == collection]:
+                    cache.pop(key, None)
         else:
             self._clip_indices.clear()
             self._embeddings_zarr.clear()

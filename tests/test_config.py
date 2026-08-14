@@ -508,6 +508,43 @@ class TestModelNameAndDefaultIndex:
         with pytest.raises(ConfigurationError):
             ConfigManager(str(path)).load_config()
 
+    def test_preload_all_indexes_defaults_to_false(self, write_config, dummy_files):
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=index_toml(
+                name="primary",
+                index_type="zarr",
+                embeddings_file=dummy_files["embeddings_file"],
+            ),
+        )
+        path = write_config(collection)
+
+        config = ConfigManager(str(path)).load_config()
+
+        assert config.collection_configs["testcol"].preload_all_indexes is False
+
+    def test_preload_all_indexes_can_be_enabled(self, write_config, dummy_files):
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=index_toml(
+                name="primary",
+                index_type="zarr",
+                embeddings_file=dummy_files["embeddings_file"],
+            ),
+            preload_all_indexes=True,
+        )
+        path = write_config(collection)
+
+        config = ConfigManager(str(path)).load_config()
+
+        assert config.collection_configs["testcol"].preload_all_indexes is True
+
 
 class TestErrorHandling:
     def test_missing_config_file_raises_configuration_error(self, tmp_path):

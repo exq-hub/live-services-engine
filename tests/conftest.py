@@ -83,8 +83,13 @@ def collection_toml(
     indexes: str,
     enabled: bool = True,
     log_directory: Optional[str] = None,
+    preload_all_indexes: Optional[bool] = None,
 ) -> str:
-    """Render a `[[collections]]` table, with one or more nested index tables."""
+    """Render a `[[collections]]` table, with one or more nested index tables.
+
+    `preload_all_indexes` is omitted unless given, exercising the
+    schema's own default (eager-load only the default index).
+    """
     lines = [
         "[[collections]]",
         f'name = "{name}"',
@@ -95,6 +100,8 @@ def collection_toml(
     ]
     if log_directory is not None:
         lines.append(f'log_directory = "{log_directory}"')
+    if preload_all_indexes is not None:
+        lines.append(f"preload_all_indexes = {str(preload_all_indexes).lower()}")
     lines.append("")
     lines.append(indexes)
     return "\n".join(lines)

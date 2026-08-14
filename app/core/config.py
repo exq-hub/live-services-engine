@@ -162,6 +162,15 @@ class CollectionConfig(BaseModel):
     indexes: List[IndexConfig] = Field(
         ..., min_length=1, description="Indexes available for this collection"
     )
+    preload_all_indexes: bool = Field(
+        False,
+        description=(
+            "If true, eagerly load every index (model, embeddings, ANN "
+            "structure) for this collection at startup. If false, only "
+            "the default index loads eagerly; the rest load lazily on "
+            "first use."
+        ),
+    )
 
     # Optional: Logging
     log_directory: Optional[str] = Field(
@@ -299,6 +308,7 @@ class ConfigManager:
                 thumbnail_media_url=collection_data["thumbnail_media_url"],
                 original_media_url=collection_data["original_media_url"],
                 log_directory=collection_data.get("log_directory", "./logs/"),
+                preload_all_indexes=collection_data.get("preload_all_indexes", False),
                 indexes=indexes,
             )
 

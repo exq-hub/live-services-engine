@@ -31,6 +31,13 @@ original_media_url = "https://localhost:5001/collection1"
 # --- Optional: Logging ---
 # log_directory = "./logs/collection1/"
 
+# --- Optional: Startup loading ---
+# By default only the default index's model, embeddings, and ANN structure
+# load at startup; every other index's model/embeddings/ANN structure loads
+# lazily the first time it's actually used. Set this to true to eagerly
+# load all of that, for every index, at startup instead.
+# preload_all_indexes = false
+
   # A collection with more than one index must mark exactly one as
   # default = true -- that's the index used when a request doesn't pick one.
   [[collections.indexes]]
@@ -43,6 +50,8 @@ original_media_url = "https://localhost:5001/collection1"
   name = "Text"
   index_type = "zarr"
   embeddings_file = "./data/collection1/embeddings.zarr"
+  embedding_type = "Text"
+  model_name = "your-sentence-transformers-model"
 
 # FAISS collection -- separate ANN index and raw embeddings required. A
 # collection can declare more than one index (e.g. a second index over a
