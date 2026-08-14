@@ -75,13 +75,10 @@ class IndexRepository:
         except KeyError:
             raise IndexError(f"Unknown collection: {collection!r}")
 
-        for index in collection_config.indexes:
-            if index.name == index_name:
-                return index
-
-        raise IndexError(
-            f"No index named {index_name!r} configured for collection {collection!r}"
-        )
+        try:
+            return collection_config.get_index(index_name)
+        except ValueError as e:
+            raise IndexError(f"{e} (collection {collection!r})")
 
     def get_clip_index(
         self, collection: str, index_name: Optional[str] = None

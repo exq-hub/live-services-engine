@@ -29,7 +29,7 @@ The dependency graph is::
     ├── get_text_model_manager
     ├── get_database_repository
     └── get_index_repository
-        ├── get_search_service  (clip_model_manager + index_repo + database_repo)
+        ├── get_search_service  (clip_model_manager + text_model_manager + index_repo + database_repo)
         └── get_item_service    (database_repo + config_manager)
 """
 
@@ -87,11 +87,14 @@ def get_index_repository(
 
 def get_search_service(
     clip_model_manager: CLIPModelManager = Depends(get_clip_model_manager),
+    text_model_manager: TextModelManager = Depends(get_text_model_manager),
     index_repo: IndexRepository = Depends(get_index_repository),
     database_repo: DatabaseRepository = Depends(get_database_repository),
 ) -> SearchService:
     """Get the search service."""
-    return SearchService(clip_model_manager, index_repo, database_repo)
+    return SearchService(
+        clip_model_manager, text_model_manager, index_repo, database_repo
+    )
 
 
 def get_item_service(

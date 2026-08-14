@@ -182,13 +182,10 @@ class DatabaseRepository:
         except KeyError:
             raise DatabaseError(f"Unknown collection: {collection!r}")
 
-        index_config = next(
-            (i for i in collection_config.indexes if i.name == index_name), None
-        )
-        if index_config is None:
-            raise DatabaseError(
-                f"No index named {index_name!r} configured for collection {collection!r}"
-            )
+        try:
+            index_config = collection_config.get_index(index_name)
+        except ValueError as e:
+            raise DatabaseError(f"{e} (collection {collection!r})")
 
         mapping, rev_mapping = self.create_item_to_datapoint_mapping(
             collection, index_name, index_config.source_type

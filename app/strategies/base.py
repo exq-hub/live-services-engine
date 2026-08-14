@@ -130,6 +130,7 @@ class RFSearchStrategy(SearchStrategy):
         excluded: List[int],
         filters: Optional[ActiveFilters] = None,
         query: Optional[str] = None,
+        index_name: Optional[str] = None,
     ) -> List[int]:
         """Execute a relevance feedback search and return matching item indices.
 
@@ -142,6 +143,8 @@ class RFSearchStrategy(SearchStrategy):
             excluded: List of item IDs to exclude from results
             filters: Optional filters to apply to the search
             query: Optional text query to combine with feedback
+            index_name: Which index to run relevance feedback against;
+                defaults to the collection's overall default index
 
         Returns:
             List of item indices matching the relevance feedback criteria

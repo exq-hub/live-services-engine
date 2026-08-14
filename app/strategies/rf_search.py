@@ -16,58 +16,94 @@
 
 """Relevance-feedback search strategy using a linear SVM.
 
-This strategy allows the user to refine search results by providing positive
-and negative example items. The pipeline:
+Unlike CLIPSearchStrategy/TextEmbeddingSearchStrategy (each tied to one
+embedding family), RF isn't tied to one: it resolves the target index by
+an explicit `index_name` (or the collection's overall default), and
+dispatches its optional pseudo-RF text-query blending to whichever
+internal strategy matches that *resolved* index's embedding_type.
 
-1. **Positive sample preparation** -- collects user-provided positive IDs.
-   If a text query is also provided, pseudo-RF is performed by running a
-   CLIP search and treating the top-10 results as additional positives.
-   If no positives and no query are given, 5 random items are sampled.
+The pipeline:
+
+1. **Index resolution** -- explicit index_name, or the collection's default.
+2. **Positive sample preparation** -- collects user-provided positive IDs.
+   If a text query is also provided, pseudo-RF is performed by encoding
+   it and searching the resolved index directly (not by re-resolving
+   through the internal strategy's own search(), which could otherwise
+   pick a different same-family index), treating the top-10 results as
+   additional positives. If no positives and no query are given, 5
+   random items are sampled.
 2. **Negative sample preparation** -- uses user-provided negatives, or
    falls back to 5 random items.
 3. **SVM training** -- fits a `SGDClassifier` (linear SVM via SGD) on the
    embeddings of the positive (+1) and negative (-1) samples.
 4. **Hyperplane search** -- uses the learned weight vector (hyperplane
-   normal) as a query vector for the CLIP index, effectively ranking items
-   by their distance from the SVM decision boundary.
-5. **Skip-set & filter handling** -- identical to `CLIPSearchStrategy`.
+   normal) as a query vector for the resolved index.
+5. **Skip-set & filter handling** -- shared with CLIP/Text search via
+   `VectorSearchMixin`.
 """
 
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import numpy as np
 from sklearn.linear_model import SGDClassifier
 from numpy.random import default_rng
 
+from app.core.config import IndexConfig, LSEConfig
+from app.core.models import CLIPModelManager, TextModelManager
 from app.repositories.database_repository import DatabaseRepository
 from app.repositories.index_repository import IndexRepository
 
 from .base import RFSearchStrategy
 from .clip_search import CLIPSearchStrategy
+from .embedding_search import EmbeddingSearchStrategy, VectorSearchMixin
+from .text_search import TextEmbeddingSearchStrategy
 from ..schemas import ActiveFilters
 from ..core.exceptions import SearchError
 
 
-class RFSearchStrategy(RFSearchStrategy):
+class RFSearchStrategy(VectorSearchMixin, RFSearchStrategy):
     """Relevance feedback search using Linear SVM."""
 
-    def __init__(self, model_manager, index_repository, metadata_repository):
-        self.model_manager = model_manager
-        """Model manager providing the CLIP text encoder and device."""
+    def __init__(
+        self,
+        clip_model_manager: CLIPModelManager,
+        text_model_manager: TextModelManager,
+        index_repository: IndexRepository,
+        metadata_repository: DatabaseRepository,
+    ):
+        self.config: LSEConfig = clip_model_manager.config
+        """Validated LSE configuration, used to resolve the target index."""
 
         self.index_repo: IndexRepository = index_repository
         """Index repository for executing nearest-neighbour vector searches."""
 
-        self.metadata_repo: DatabaseRepository = metadata_repository
+        self.database_repo: DatabaseRepository = metadata_repository
         """Database repository for ID mapping, filters, and item lookups."""
 
         self.clip_search: CLIPSearchStrategy = CLIPSearchStrategy(
-            model_manager, index_repository, metadata_repository
+            clip_model_manager, index_repository, metadata_repository
         )
         """Internal CLIP search strategy used for pseudo relevance-feedback queries."""
 
+        self.text_search: TextEmbeddingSearchStrategy = TextEmbeddingSearchStrategy(
+            text_model_manager, index_repository, metadata_repository
+        )
+        """Internal Text search strategy used for pseudo relevance-feedback queries."""
+
+        self._query_strategies: Dict[str, EmbeddingSearchStrategy] = {
+            "CLIP": self.clip_search,
+            "Text": self.text_search,
+        }
+        """Text-query-blending strategy per embedding_type, keyed the same
+        way SearchService keys its own strategy registry."""
+
     def get_strategy_name(self) -> str:
         return "RF Search"
+
+    def _resolve_index(self, collection: str, index_name: Optional[str]) -> IndexConfig:
+        """Explicit index_name, or the collection's overall default."""
+        collection_config = self.config.collection_configs[collection]
+        return collection_config.resolve_index(index_name)
 
     async def search(
         self,
@@ -79,20 +115,25 @@ class RFSearchStrategy(RFSearchStrategy):
         excluded: List[int],
         filters: Optional[ActiveFilters] = None,
         query: Optional[str] = None,
+        index_name: Optional[str] = None,
     ) -> List[int]:
         """Execute relevance feedback search using SVM."""
         try:
+            index_config = self._resolve_index(collection, index_name)
+
             # Get embeddings array
-            emb_arr = self.index_repo.get_embeddings_array(collection)
-            total_items = self.metadata_repo.get_total_items(collection)
+            emb_arr = self.index_repo.get_embeddings_array(collection, index_config.name)
+            total_items = self.database_repo.get_total_items(collection, index_config.name)
 
             # Prepare positive samples
             pos_samples = await self._prepare_positive_samples(
-                collection, pos, query, seen, excluded, filters
+                collection, index_config, pos, query, seen, excluded, filters
             )
 
             # Prepare negative samples
-            neg_samples = self._prepare_negative_samples(collection, neg, total_items)
+            neg_samples = self._prepare_negative_samples(
+                collection, index_config.name, neg, total_items
+            )
 
             # Train SVM classifier
             if len(pos_samples) == 0:
@@ -115,7 +156,7 @@ class RFSearchStrategy(RFSearchStrategy):
 
             # Search with expanding radius
             return await self._search_with_expansion(
-                collection, hyperplane, n, seen_set, excluded_set, filters
+                collection, index_config.name, hyperplane, n, seen_set, excluded_set, filters
             )
 
         except Exception as e:
@@ -131,6 +172,7 @@ class RFSearchStrategy(RFSearchStrategy):
     async def _prepare_positive_samples(
         self,
         collection: str,
+        index_config: IndexConfig,
         pos: List[int],
         query: Optional[str],
         seen: List[int],
@@ -143,13 +185,28 @@ class RFSearchStrategy(RFSearchStrategy):
         # Add pseudo RF samples if query is provided
         if query is not None:
             try:
-                pseudo_rf = await self.clip_search.search(
-                    collection=collection,
-                    text=query,
-                    n=10,
-                    seen=seen,
-                    excluded=excluded,
-                    filters=filters,
+                query_strategy = self._query_strategies.get(index_config.embedding_type)
+                if query_strategy is None:
+                    raise SearchError(
+                        f"No text-query strategy available for embedding_type "
+                        f"{index_config.embedding_type!r}"
+                    )
+                # Encode/search against index_config directly rather than
+                # query_strategy.search(), which re-resolves the index for
+                # its own family and could pick a different same-family one.
+                text_features = await query_strategy._encode_text(
+                    index_config.model_name, query
+                )
+                excluded_set = self._build_excluded_set(collection, excluded)
+                seen_set = set(seen)
+                pseudo_rf = await query_strategy._search_with_expansion(
+                    collection,
+                    index_config.name,
+                    text_features,
+                    10,
+                    seen_set,
+                    excluded_set,
+                    filters,
                 )
                 positive_samples.extend(pseudo_rf)
             except Exception:
@@ -159,83 +216,28 @@ class RFSearchStrategy(RFSearchStrategy):
         # If no positive samples and no query, add random samples
         if not positive_samples and query is None:
             rng = default_rng()
-            total_items = self.metadata_repo.get_total_items(collection)
+            total_items = self.database_repo.get_total_items(collection, index_config.name)
             positive_samples = rng.choice(total_items, size=5, replace=False).tolist()
 
-        if isinstance(self.metadata_repo, DatabaseRepository):
-            positive_samples = self.metadata_repo.get_index_ids(
-                collection, positive_samples
-            )
+        positive_samples = self.database_repo.get_index_ids(
+            collection, positive_samples, index_config.name
+        )
 
         return np.asarray(positive_samples)
 
     def _prepare_negative_samples(
-        self, collection, neg: List[int], total_items: int
+        self, collection: str, index_name: str, neg: List[int], total_items: int
     ) -> np.ndarray:
         """Prepare negative samples."""
         if neg:
-            if isinstance(self.metadata_repo, DatabaseRepository):
-                neg = self.metadata_repo.get_index_ids(collection, neg)
+            neg = self.database_repo.get_index_ids(collection, neg, index_name)
             return np.asarray(neg)
         else:
             # Add random negative samples if none provided
             rng = default_rng()
-            if isinstance(self.metadata_repo, DatabaseRepository):
-                neg = self.metadata_repo.get_index_ids(
-                    collection, rng.choice(total_items, size=5, replace=False).tolist()
-                )
-                return np.asarray(neg)
-            return rng.choice(total_items, size=5, replace=False)
-
-    def _build_excluded_set(self, collection: str, excluded: List[int]) -> set:
-        """Build set of excluded items including related items."""
-        if not excluded:
-            return set()
-
-        excluded_set = set(excluded)
-        metadata_repo: DatabaseRepository = self.metadata_repo
-        for exc in excluded:
-            item = metadata_repo.get_item(collection, exc)
-            related = metadata_repo.get_related_items(collection, item["group"])
-            excluded_set.update(related)
-
-        return excluded_set
-
-    async def _search_with_expansion(
-        self,
-        collection: str,
-        hyperplane: np.ndarray,
-        n: int,
-        seen_set: set,
-        excluded_set: set,
-        filters: Optional[ActiveFilters],
-    ) -> List[int]:
-        """Search with expanding radius until sufficient results."""
-        active_n = n
-        total_items = self.metadata_repo.get_total_items(collection)
-        skip_ids = set()
-        if len(seen_set) != 0:
-            skip_ids.update(
-                self.metadata_repo.get_index_ids(collection, list(seen_set))
+            neg = self.database_repo.get_index_ids(
+                collection,
+                rng.choice(total_items, size=5, replace=False).tolist(),
+                index_name,
             )
-        if len(excluded_set) != 0:
-            skip_ids.update(
-                self.metadata_repo.get_index_ids(collection, list(excluded_set))
-            )
-
-        if filters:
-            passed_ids = []
-            passed_ids = self.metadata_repo.get_filtered_media_ids(collection, filters)
-            # NOTE: Can use the size of passed_ids to determine if index search is needed
-            #       If it is lower than a certain threshold we can search through the subset with
-            #       the zarr embeddings array directly
-            index_passed_ids = self.metadata_repo.get_index_ids(collection, passed_ids)
-            index_skip_ids = set(range(total_items)) - set(index_passed_ids)
-            skip_ids.update(index_skip_ids)
-
-        indices, _ = self.index_repo.search_clip(
-            collection, hyperplane, active_n, skip_ids=skip_ids
-        )
-        suggestions = self.metadata_repo.get_media_ids(collection, indices)
-
-        return suggestions
+            return np.asarray(neg)

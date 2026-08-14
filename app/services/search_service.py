@@ -17,10 +17,12 @@
 """Search service -- strategy dispatcher and performance tracker.
 
 `SearchService` is the entry point for all search operations. It initialises
-the three available strategies at construction time and dispatches incoming
+the available strategies at construction time and dispatches incoming
 requests to the correct one:
 
 - ``"clip"`` -- `CLIPSearchStrategy` for text-to-image similarity search.
+- ``"text"`` -- `TextEmbeddingSearchStrategy` for text-to-item search over
+  a sentence-transformers embedding space (e.g. transcripts).
 - ``"rf"`` -- `RFSearchStrategy` for SVM-based relevance feedback.
 - ``"faceted"`` -- `FacetedSearchStrategy` for filter-only retrieval.
 
@@ -39,6 +41,7 @@ from ..strategies.base import (
     FacetedSearchStrategy,
 )
 from ..strategies.clip_search import CLIPSearchStrategy
+from ..strategies.text_search import TextEmbeddingSearchStrategy
 from ..strategies.rf_search import RFSearchStrategy as RFSearchImpl
 from ..strategies.faceted_search import FacetedSearchStrategy as FacetedSearchImpl
 from ..schemas import FacetedSearchRequest, TextSearchRequest, RFSearchRequest
@@ -48,9 +51,18 @@ from ..core.exceptions import SearchError
 class SearchService:
     """Service for managing different search strategies."""
 
-    def __init__(self, clip_model_manager, index_repository, metadata_repository):
+    def __init__(
+        self,
+        clip_model_manager,
+        text_model_manager,
+        index_repository,
+        metadata_repository,
+    ):
         self.clip_model_manager = clip_model_manager
         """Shared `CLIPModelManager` providing text encoders/tokenizers and the device."""
+
+        self.text_model_manager = text_model_manager
+        """Shared `TextModelManager` providing sentence-transformers encoders and the device."""
 
         self.index_repo = index_repository
         """Shared `IndexRepository` for vector nearest-neighbour lookups."""
@@ -62,12 +74,18 @@ class SearchService:
             "clip": CLIPSearchStrategy(
                 clip_model_manager, index_repository, metadata_repository
             ),
+            "text": TextEmbeddingSearchStrategy(
+                text_model_manager, index_repository, metadata_repository
+            ),
             "rf": RFSearchImpl(
-                clip_model_manager, index_repository, metadata_repository
+                clip_model_manager,
+                text_model_manager,
+                index_repository,
+                metadata_repository,
             ),
             "faceted": FacetedSearchImpl(metadata_repository),
         }
-        """Registry of available search strategies keyed by name (``clip``, ``rf``, ``faceted``)."""
+        """Registry of available search strategies keyed by name (``clip``, ``text``, ``rf``, ``faceted``)."""
 
     async def search_text(self, strategy_name: str, request: TextSearchRequest) -> Dict:
         """Execute text-based search using specified strategy."""
@@ -127,6 +145,7 @@ class SearchService:
                 excluded=request.excluded,
                 filters=request.filters,
                 query=request.query,
+                index_name=request.index_name,
             )
 
             completion_time = int(time.time()) - start_time

@@ -233,6 +233,35 @@ class CollectionConfig(BaseModel):
             return self.indexes[0]
         return next(index for index in self.indexes if index.default)
 
+    def get_index(self, name: str) -> IndexConfig:
+        """Look up an index by name."""
+        for index in self.indexes:
+            if index.name == name:
+                return index
+        raise ValueError(f"No index named {name!r} configured for this collection")
+
+    def resolve_index(self, index_name: Optional[str] = None) -> IndexConfig:
+        """Resolve an index by explicit name, or the collection's default index."""
+        if index_name is not None:
+            return self.get_index(index_name)
+        return self.default_index
+
+    def resolve_index_for_embedding_type(self, embedding_type: str) -> IndexConfig:
+        """Resolve the index for a family-scoped endpoint (e.g. /clip, /text).
+
+        Prefers the collection's overall default index when it belongs to
+        `embedding_type`; otherwise falls back to the first configured
+        index of that type. Raises if the collection has none.
+        """
+        matching = [i for i in self.indexes if i.embedding_type == embedding_type]
+        if not matching:
+            raise ValueError(
+                f"No {embedding_type!r}-type index configured for this collection"
+            )
+        if self.default_index.embedding_type == embedding_type:
+            return self.default_index
+        return matching[0]
+
 
 class LSEConfig(BaseModel):
     """Main LSE configuration."""

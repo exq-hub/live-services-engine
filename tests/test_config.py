@@ -601,6 +601,88 @@ class TestModelNameAndDefaultIndex:
             ConfigManager(str(path)).load_config()
 
 
+class TestCollectionConfigIndexResolution:
+    """get_index / resolve_index / resolve_index_for_embedding_type.
+
+    Used by the search endpoints: /clip and /text resolve by family
+    (resolve_index_for_embedding_type), /rf resolves by explicit name or
+    falls back to the collection's overall default (resolve_index).
+    """
+
+    def _collection(self, write_config, dummy_files):
+        indexes = "\n".join(
+            [
+                index_toml(
+                    name="clip_idx",
+                    index_type="zarr",
+                    embeddings_file=dummy_files["embeddings_file"],
+                    model_name="model-one",
+                    default=True,
+                ),
+                index_toml(
+                    name="text_idx",
+                    index_type="zarr",
+                    embeddings_file=dummy_files["embeddings_file"],
+                    embedding_type="Text",
+                    model_name="model-two",
+                ),
+            ]
+        )
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=indexes,
+        )
+        path = write_config(collection)
+        return ConfigManager(str(path)).load_config().collection_configs["testcol"]
+
+    def test_get_index_looks_up_by_name(self, write_config, dummy_files):
+        collection = self._collection(write_config, dummy_files)
+        assert collection.get_index("text_idx").name == "text_idx"
+
+    def test_get_index_raises_for_unknown_name(self, write_config, dummy_files):
+        collection = self._collection(write_config, dummy_files)
+        with pytest.raises(ValueError):
+            collection.get_index("does-not-exist")
+
+    def test_resolve_index_with_no_name_returns_the_default(
+        self, write_config, dummy_files
+    ):
+        collection = self._collection(write_config, dummy_files)
+        assert collection.resolve_index() is collection.default_index
+
+    def test_resolve_index_with_explicit_name_ignores_default(
+        self, write_config, dummy_files
+    ):
+        collection = self._collection(write_config, dummy_files)
+        assert collection.resolve_index("text_idx").name == "text_idx"
+
+    def test_resolve_index_for_embedding_type_prefers_the_default_when_it_matches(
+        self, write_config, dummy_files
+    ):
+        collection = self._collection(write_config, dummy_files)
+        assert collection.resolve_index_for_embedding_type("CLIP") is (
+            collection.default_index
+        )
+
+    def test_resolve_index_for_embedding_type_falls_back_when_default_is_other_family(
+        self, write_config, dummy_files
+    ):
+        collection = self._collection(write_config, dummy_files)
+        # The collection's overall default is clip_idx (CLIP), so resolving
+        # for "Text" must fall back to the only Text-type index instead.
+        assert collection.resolve_index_for_embedding_type("Text").name == "text_idx"
+
+    def test_resolve_index_for_embedding_type_raises_when_no_index_matches(
+        self, write_config, dummy_files
+    ):
+        collection = self._collection(write_config, dummy_files)
+        with pytest.raises(ValueError):
+            collection.resolve_index_for_embedding_type("CBIR")
+
+
 class TestErrorHandling:
     def test_missing_config_file_raises_configuration_error(self, tmp_path):
         missing_path = tmp_path / "does_not_exist.toml"
