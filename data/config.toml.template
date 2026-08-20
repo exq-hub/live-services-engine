@@ -72,8 +72,8 @@ original_media_url = "https://localhost:5001/collection1"
 # embedding space, built from the same vectors, in the same insertion
 # order, e.g. an HNSW graph for fast approximate search and an IVF+PQ
 # index for a smaller memory footprint. Both set `tagset` to the same
-# name, "CLIP", so they share one item-to-position mapping instead of
-# each getting its own duplicate one -- `tagset` is used verbatim, so
+# name, "SigLIP ID", so they share one item-to-position mapping instead of
+# each getting its own duplicate one. `tagset` is used verbatim, so
 # it doesn't have to follow the "<name> Index ID" convention at all.
 # [[collections]]
 # name = "collection2"
@@ -88,7 +88,7 @@ original_media_url = "https://localhost:5001/collection1"
 #   index_type = "faiss"
 #   index_file = "./data/collection2/clip_hnsw.faiss"
 #   embeddings_file = "./data/collection2/clip_embeddings.zipstore"
-#   tagset = "CLIP"
+#   tagset = "SigLIP ID"
 #   default = true
 #
 #   [[collections.indexes]]
@@ -96,4 +96,4 @@ original_media_url = "https://localhost:5001/collection1"
 #   index_type = "faiss"
 #   index_file = "./data/collection2/clip_ivfpq.faiss"
 #   embeddings_file = "./data/collection2/clip_embeddings.zipstore"
-#   tagset = "CLIP"
+#   tagset = "SigLIP ID"
