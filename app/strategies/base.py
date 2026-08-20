@@ -94,6 +94,7 @@ class TextSearchStrategy(SearchStrategy):
         seen: List[int],
         excluded: List[int],
         filters: Optional[ActiveFilters] = None,
+        index_name: Optional[str] = None,
     ) -> List[int]:
         """Execute a text-based search and return matching item indices.
 
@@ -104,6 +105,9 @@ class TextSearchStrategy(SearchStrategy):
             seen: List of item IDs that have already been seen
             excluded: List of item IDs to exclude from results
             filters: Optional filters to apply to the search
+            index_name: Which of the collection's indexes (of this
+                strategy's embedding_type) to search; defaults to the
+                family's resolved default index
 
         Returns:
             List of item indices matching the text query

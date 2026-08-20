@@ -137,9 +137,24 @@ class EmbeddingSearchStrategy(VectorSearchMixin, TextSearchStrategy, ABC):
         self.database_repo: DatabaseRepository = database_repository
         """Database repository for ID mapping, filters, and exclusion lookups."""
 
-    def _resolve_index(self, collection: str) -> IndexConfig:
-        """Which of the collection's indexes belongs to this family."""
+    def _resolve_index(
+        self, collection: str, index_name: Optional[str] = None
+    ) -> IndexConfig:
+        """Which of the collection's indexes belongs to this family.
+
+        An explicit `index_name` must itself be of this strategy's
+        `embedding_type` -- e.g. /clip can't be pointed at a Text index.
+        Without one, falls back to `resolve_index_for_embedding_type`.
+        """
         collection_config = self.model_manager.config.collection_configs[collection]
+        if index_name is not None:
+            index_config = collection_config.get_index(index_name)
+            if index_config.embedding_type != self.embedding_type:
+                raise ValueError(
+                    f"Index {index_name!r} is {index_config.embedding_type!r}-type, "
+                    f"not {self.embedding_type!r}"
+                )
+            return index_config
         return collection_config.resolve_index_for_embedding_type(self.embedding_type)
 
     async def search(
@@ -150,10 +165,11 @@ class EmbeddingSearchStrategy(VectorSearchMixin, TextSearchStrategy, ABC):
         seen: List[int],
         excluded: List[int],
         filters: Optional[ActiveFilters] = None,
+        index_name: Optional[str] = None,
     ) -> List[int]:
         """Execute a text-to-vector search against this family's index."""
         try:
-            index_config = self._resolve_index(collection)
+            index_config = self._resolve_index(collection, index_name)
             text_features = await self._encode_text(index_config.model_name, text)
 
             excluded_set = self._build_excluded_set(collection, excluded)

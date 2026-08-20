@@ -157,3 +157,77 @@ class TestResolveIndex:
 
         with pytest.raises(ValueError):
             strategy._resolve_index("testcol")
+
+    def test_explicit_index_name_overrides_the_family_default(
+        self, write_config, dummy_files
+    ):
+        # Two CLIP-type indexes -- without an explicit index_name there'd be
+        # no way to reach "b" at all, since it isn't the collection default.
+        indexes = "\n".join(
+            [
+                index_toml(
+                    name="a",
+                    index_type="zarr",
+                    embeddings_file=dummy_files["embeddings_file"],
+                    model_name="model-one",
+                    default=True,
+                ),
+                index_toml(
+                    name="b",
+                    index_type="zarr",
+                    embeddings_file=dummy_files["embeddings_file"],
+                    model_name="model-two",
+                ),
+            ]
+        )
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=indexes,
+        )
+        path = write_config(collection)
+        config = ConfigManager(str(path)).load_config()
+
+        model_manager = CLIPModelManager(config)
+        strategy = CLIPSearchStrategy(model_manager, MagicMock(), MagicMock())
+
+        resolved = strategy._resolve_index("testcol", index_name="b")
+        assert resolved.name == "b"
+        assert resolved.model_name == "model-two"
+
+    def test_explicit_index_name_of_the_wrong_family_raises(
+        self, write_config, dummy_files
+    ):
+        indexes = "\n".join(
+            [
+                index_toml(
+                    name="clip_idx",
+                    index_type="zarr",
+                    embeddings_file=dummy_files["embeddings_file"],
+                    default=True,
+                ),
+                index_toml(
+                    name="text_idx",
+                    index_type="zarr",
+                    embeddings_file=dummy_files["embeddings_file"],
+                    embedding_type="Text",
+                ),
+            ]
+        )
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=indexes,
+        )
+        path = write_config(collection)
+        config = ConfigManager(str(path)).load_config()
+
+        model_manager = CLIPModelManager(config)
+        strategy = CLIPSearchStrategy(model_manager, MagicMock(), MagicMock())
+
+        with pytest.raises(ValueError):
+            strategy._resolve_index("testcol", index_name="text_idx")

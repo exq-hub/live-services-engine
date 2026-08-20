@@ -24,6 +24,8 @@ metadata queries, and audit logging of client-side events:
 - ``GET  /info/filters/{session}/{collection}`` -- filter (tagset) definitions.
 - ``GET  /info/filters/values/{session}/{collection}/{tagtypeId}/{tagsetId}``
   -- possible values for a specific filter.
+- ``GET  /info/indexes/{session}/{collection}`` -- the collection's configured
+  indexes, so a client can discover index names instead of hardcoding them.
 - ``POST /log/addModel`` / ``POST /log/removeModel`` -- audit model lifecycle.
 - ``POST /log/clientEvent`` -- batch-log arbitrary client-side UI events.
 """
@@ -156,6 +158,37 @@ async def get_filter_values(
         from fastapi import HTTPException
 
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.get("/info/indexes/{session}/{collection}")
+async def get_indexes(
+    session: str,
+    collection: str,
+    config_manager=Depends(get_config_manager),
+) -> List[Dict[str, Any]]:
+    """List the indexes configured for a collection.
+
+    Lets a client discover available index names (and which embedding
+    family/media type each belongs to) instead of hardcoding them, for
+    picking an `index_name` on /clip, /text, or /rf.
+    """
+    try:
+        collection_config = config_manager.config.collection_configs[collection]
+    except KeyError:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail=f"Unknown collection: {collection!r}")
+
+    return [
+        {
+            "name": index.name,
+            "index_type": index.index_type,
+            "embedding_type": index.embedding_type,
+            "source_type": index.source_type,
+            "default": index.default,
+        }
+        for index in collection_config.indexes
+    ]
 
 
 @router.post("/log/addModel")

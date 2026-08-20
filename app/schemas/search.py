@@ -38,6 +38,7 @@ class TextSearchRequest(BaseModel):
         filters: Optional active filters to apply
         excluded: Optional list of item IDs to exclude from results
         session_info: Session context information
+        index_name: Optional index to search against
     """
 
     text: str
@@ -57,6 +58,11 @@ class TextSearchRequest(BaseModel):
 
     session_info: SessionInfo
     """Session context (session ID, collection, model ID)."""
+
+    index_name: Optional[str] = None
+    """Which of the collection's indexes to search; must be of this
+    endpoint's embedding_type (CLIP for /clip, Text for /text). Omitted,
+    it falls back to the family's resolved default index."""
 
 
 class RFSearchRequest(BaseModel):

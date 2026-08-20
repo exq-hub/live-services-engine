@@ -106,6 +106,7 @@ class SearchService:
                 seen=request.seen or [],
                 excluded=request.excluded or [],
                 filters=request.filters,
+                index_name=request.index_name,
             )
 
             completion_time = int(time.time()) - start_time
