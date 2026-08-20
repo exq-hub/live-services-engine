@@ -29,44 +29,52 @@ uv sync
 Copy the template and edit it:
 
 ```bash
-cp data/config.ini.template data/config.ini
+cp data/config.toml.template data/config.toml
 ```
 
 A minimal configuration looks like:
 
-```ini
-[DEFAULT]
-ModelDevice = auto
+```toml
+[default]
+model_device = "auto"
 
-[SERVER]
-Host = 127.0.0.1
-Port = 8000
-Reload = True
+[server]
+host = "127.0.0.1"
+port = 8000
+reload = true
 
-[LOGGING]
-Level = INFO
+[logging]
+level = "INFO"
 
-# Zarr collection — EmbeddingsFile is used directly as the brute-force index:
-[my_collection]
-Enabled = True
-IndexType = zarr
-EmbeddingsFile = ./data/my_collection/embeddings.zarr.zip
-DatabaseFile = ./data/my_collection/my_collection.db
-ThumbnailMediaURL = https://localhost:5001/my_collection
-OriginalMediaURL = https://localhost:5001/my_collection
+# A collection declares one or more indexes, each independently picking
+# its own index_type ("zarr" uses the embeddings file directly as a
+# brute-force index; "faiss" points index_file at a separate ANN
+# structure) and embedding_type ("CLIP" or "Text") -- a single
+# collection can freely mix both.
+[[collections]]
+name = "my_collection"
+enabled = true
+database_file = "./data/my_collection/my_collection.db"
+thumbnail_media_url = "https://localhost:5001/my_collection"
+original_media_url = "https://localhost:5001/my_collection"
 
-# FAISS collection — separate ANN index and raw embeddings required:
-# [my_faiss_collection]
-# Enabled = True
-# IndexType = faiss
-# CLIPIndexFile = ./data/my_faiss_collection/clip_index.faiss
-# EmbeddingsFile = ./data/my_faiss_collection/embeddings.zarr.zip
-# DatabaseFile = ./data/my_faiss_collection/my_collection.db
-# ThumbnailMediaURL = https://localhost:5001/my_faiss_collection
-# OriginalMediaURL = https://localhost:5001/my_faiss_collection
+  [[collections.indexes]]
+  name = "CLIP"
+  index_type = "zarr"
+  embeddings_file = "./data/my_collection/embeddings.zarr.zip"
+
+# A collection with more than one index must mark exactly one default = true.
+# [[collections.indexes]]
+# name = "Transcripts"
+# index_type = "faiss"
+# index_file = "./data/my_collection/transcripts.faiss"
+# embeddings_file = "./data/my_collection/transcript_embeddings.zip"
+# embedding_type = "Text"
+# model_name = "your-sentence-transformers-model"
+# source_type = "Text"
 ```
 
-Each `[section]` (other than `DEFAULT`, `SERVER`, and `LOGGING`) defines a collection.
+Each `[[collections]]` table defines a collection, with one or more nested `[[collections.indexes]]` tables for its embeddings/index configuration. See `data/config.toml.template` for the full set of per-index options (`model_name`, `source_type`, `tagset`, `preload_all_indexes`, etc.).
 
 ## Usage
 
@@ -92,8 +100,11 @@ All endpoints are mounted under `/exq/`. We may introduce a semantic versioning 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/exq/search/clip` | Text-to-image search using CLIP |
+| POST | `/exq/search/text` | Text search using sentence-transformers (e.g. transcripts) |
 | POST | `/exq/search/rf` | Relevance feedback search |
 | POST | `/exq/search/faceted` | Filter-only search |
+
+`/clip`, `/text`, and `/rf` all accept an optional `index_name` to target a specific index within a collection (of the matching `embedding_type` for `/clip`/`/text`); omitted, each falls back to the collection's default index for that family.
 
 ### Items
 
@@ -111,6 +122,10 @@ All endpoints are mounted under `/exq/`. We may introduce a semantic versioning 
 | GET | `/exq/init/{session}` | Initialize a session, returns available collections |
 | POST | `/exq/info/totalItems` | Total item count for a collection |
 | GET | `/exq/info/filters/{session}/{collection}` | Available filter definitions |
+| GET | `/exq/info/filters/values/{session}/{collection}/{tagtypeId}/{tagsetId}` | Possible values for a specific filter |
+| GET | `/exq/info/indexes/{session}/{collection}` | Configured indexes for a collection (name, index_type, embedding_type, source_type, default) |
+| POST | `/exq/log/addModel` | Audit-log a relevance-feedback model being added |
+| POST | `/exq/log/removeModel` | Audit-log a relevance-feedback model being removed |
 | POST | `/exq/log/clientEvent` | Batch-log client UI events |
 
 ### System
