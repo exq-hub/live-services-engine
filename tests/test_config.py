@@ -601,6 +601,83 @@ class TestModelNameAndDefaultIndex:
             ConfigManager(str(path)).load_config()
 
 
+class TestTagsetName:
+    def test_tagset_name_defaults_to_name_based_on_index_name(
+        self, write_config, dummy_files
+    ):
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=index_toml(
+                name="SigLIP_hnsw",
+                index_type="zarr",
+                embeddings_file=dummy_files["embeddings_file"],
+            ),
+        )
+        path = write_config(collection)
+
+        config = ConfigManager(str(path)).load_config()
+
+        index = config.collection_configs["testcol"].indexes[0]
+        assert index.tagset_name == "SigLIP_hnsw Index ID"
+
+    def test_tagset_override_is_used_verbatim(self, write_config, dummy_files):
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=index_toml(
+                name="SigLIP_hnsw",
+                index_type="zarr",
+                embeddings_file=dummy_files["embeddings_file"],
+                tagset="SigLIP",
+            ),
+        )
+        path = write_config(collection)
+
+        config = ConfigManager(str(path)).load_config()
+
+        index = config.collection_configs["testcol"].indexes[0]
+        assert index.tagset_name == "SigLIP"
+
+    def test_two_indexes_can_share_the_same_tagset(self, write_config, dummy_files):
+        indexes = "\n".join(
+            [
+                index_toml(
+                    name="SigLIP_hnsw",
+                    index_type="faiss",
+                    embeddings_file=dummy_files["embeddings_file"],
+                    index_file=dummy_files["index_file"],
+                    tagset="SigLIP",
+                    default=True,
+                ),
+                index_toml(
+                    name="SigLIP_zarr",
+                    index_type="zarr",
+                    embeddings_file=dummy_files["embeddings_file"],
+                    tagset="SigLIP",
+                ),
+            ]
+        )
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=indexes,
+        )
+        path = write_config(collection)
+
+        config = ConfigManager(str(path)).load_config()
+
+        collection_config = config.collection_configs["testcol"]
+        assert collection_config.get_index("SigLIP_hnsw").tagset_name == "SigLIP"
+        assert collection_config.get_index("SigLIP_zarr").tagset_name == "SigLIP"
+
+
 class TestCollectionConfigIndexResolution:
     """get_index / resolve_index / resolve_index_for_embedding_type.
 

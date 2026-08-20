@@ -15,9 +15,9 @@
 
 """Tests for DatabaseRepository's per-index, config-driven id mapping.
 
-`create_item_to_datapoint_mapping` reads the `<index_name> Index ID`
-tagset from a real (minimal) M3-DB-schema SQLite database -- these
-tests build one directly, matching
+`create_item_to_datapoint_mapping` reads an index's `tagset_name`
+(defaulting to `<index name> Index ID`) from a real (minimal)
+M3-DB-schema SQLite database -- these tests build one directly, matching
 https://github.com/Ok2610/Simplified-M3-DB, rather than mocking the
 database layer, since the actual SQL joins are exactly what's under test.
 

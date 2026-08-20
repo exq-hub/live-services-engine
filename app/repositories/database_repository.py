@@ -26,10 +26,11 @@ contains:
   where tag values are stored in type-specific tables (e.g.
   ``categorical_tags``, ``numerical_int_tags``) and linked to media items
   via the ``taggings`` join table.
-- **Index mapping** -- a ``<index_name> Index ID`` tagset per configured
-  index in ``numerical_int_tags`` (e.g. ``CLIP Index ID``, ``Text Index
-  ID``) that maps each media item to its position in that index,
-  enabling bidirectional translation between media IDs and index IDs.
+- **Index mapping** -- each configured index reads its item-to-position
+  mapping from a tagset in ``numerical_int_tags`` (its ``tagset_name``,
+  which defaults to ``<index name> Index ID``) that maps each media item
+  to its position in that index, enabling bidirectional translation
+  between media IDs and index IDs.
 
 The repository caches database connections and index mappings per
 collection and provides methods for item retrieval, filter evaluation
@@ -48,7 +49,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from app.repositories import db_helper
 from app.schemas import ActiveFilters
 
-from ..core.config import LSEConfig
+from ..core.config import IndexConfig, LSEConfig
 from ..core.exceptions import DatabaseError
 
 import pandas as pd
@@ -73,7 +74,7 @@ class DatabaseRepository:
         """Per-collection database file paths."""
 
         self._db_type: Dict[str, str] = {}
-        """Per-collection database backend type (e.g. ``'sqlite'``, ``'duckdb'``)."""
+        """Per-collection database backend type (e.g. ``'sqlite'``, ``'duckdb'``, ``'postgres'``)."""
 
         self._item_datapoint_mapping_cache: Dict[str, Dict[str, Dict[int, int]]] = {}
         """Nested mapping: ``collection -> index_name -> index_id -> media_id``."""
@@ -188,7 +189,7 @@ class DatabaseRepository:
             raise DatabaseError(f"{e} (collection {collection!r})")
 
         mapping, rev_mapping = self.create_item_to_datapoint_mapping(
-            collection, index_name, index_config.source_type
+            collection, index_config
         )
         self._item_datapoint_mapping_cache.setdefault(collection, {})[index_name] = (
             mapping
@@ -643,19 +644,18 @@ class DatabaseRepository:
                 cursor.close()
 
     def create_item_to_datapoint_mapping(
-        self, collection: str, index_name: str, source_type: str
+        self, collection: str, index_config: IndexConfig
     ) -> Tuple[Dict[int, int], Dict[int, int]]:
         """Create a mapping from item IDs to their datapoint indices for one index.
 
-        Reads the `<index_name> Index ID` tagset, resolving `source_type`
+        Reads `index_config.tagset_name`, resolving `index_config.source_type`
         (e.g. "Image") against the database's own source_types table
         rather than assuming fixed IDs, and using it to filter the mapped
         medias to the expected kind.
 
         Args:
             collection: Name of the collection
-            index_name: Name of the index (used as the `<index_name> Index ID` tagset)
-            source_type: Expected media kind for this index, e.g. "Image"
+            index_config: The index whose id mapping to build
 
         Returns:
             (mapping, rev_mapping): index_id -> media_id and media_id -> index_id
@@ -665,19 +665,20 @@ class DatabaseRepository:
             cursor = self._db_connection[collection].cursor()
             if self._db_type[collection] == "sqlite":
                 source_type_row = cursor.execute(
-                    "SELECT id FROM source_types WHERE name = ?", [source_type]
+                    "SELECT id FROM source_types WHERE name = ?",
+                    [index_config.source_type],
                 ).fetchone()
                 if source_type_row is None:
                     raise DatabaseError(
-                        f"Unknown source_type {source_type!r} for collection {collection!r}"
+                        f"Unknown source_type {index_config.source_type!r} for collection {collection!r}"
                     )
                 source_type_id = source_type_row[0]
 
                 mapping = {}
                 rev_mapping = {}
-                tagset_name = f"{index_name} Index ID"
                 ts_id = cursor.execute(
-                    "SELECT id FROM tagsets WHERE name = ?", [tagset_name]
+                    "SELECT id FROM tagsets WHERE name = ?",
+                    [index_config.tagset_name],
                 ).fetchone()
 
                 if ts_id is not None:
@@ -701,14 +702,14 @@ class DatabaseRepository:
                 if mapping == {}:
                     raise DatabaseError(
                         f"No valid item to datapoint mapping could be created for "
-                        f"collection {collection}, index {index_name!r}"
+                        f"collection {collection}, index {index_config.name!r}"
                     )
 
                 return mapping, rev_mapping
         except Exception as e:
             raise DatabaseError(
                 f"Failed to create item to datapoint mapping for collection "
-                f"{collection}, index {index_name!r}: {e}"
+                f"{collection}, index {index_config.name!r}: {e}"
             )
         finally:
             if cursor:

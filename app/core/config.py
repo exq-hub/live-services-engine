@@ -83,9 +83,9 @@ class IndexConfig(BaseModel):
     name: str = Field(
         ...,
         description=(
-            "Identifies this index within its collection. Also used as the "
-            "DB id-tag namespace (e.g. a name of 'CLIP' resolves to a "
-            "'CLIP Index ID' tagset)."
+            "Identifies this index within its collection. Also the default "
+            "DB id-tag namespace, as '<name> Index ID', unless overridden "
+            "by `tagset`."
         ),
     )
     index_type: str = Field(..., description="Index backend: 'faiss' or 'zarr'")
@@ -116,8 +116,19 @@ class IndexConfig(BaseModel):
             "'Image', 'Video', 'Audio', 'Text', or 'Other'. Matches a row in "
             "the database's source_types table, and picks both which medias "
             "this index maps ('Text' for an index over transcripts, "
-            "'Image' for one over keyframes) and the '<name> Index ID' "
-            "tagset's expected source_type."
+            "'Image' for one over keyframes) and the tagset's expected "
+            "source_type."
+        ),
+    )
+    tagset: Optional[str] = Field(
+        None,
+        description=(
+            "DB tagset this index's id mapping is read from, used verbatim. "
+            "Defaults to '<name> Index ID' when unset. Override when several "
+            "indexes share one underlying id space -- e.g. the same "
+            "embeddings built as uncompressed zarr, HNSW, and HNSW+PQ -- so "
+            "they all read the same tagset instead of each needing (and "
+            "duplicating) their own."
         ),
     )
     default: bool = Field(
@@ -128,6 +139,13 @@ class IndexConfig(BaseModel):
             "implied when a collection has only one."
         ),
     )
+
+    @property
+    def tagset_name(self) -> str:
+        """The DB tagset this index's id mapping is read from."""
+        if self.tagset is not None:
+            return self.tagset
+        return f"{self.name} Index ID"
 
     @field_validator("index_file")
     @classmethod
@@ -354,6 +372,8 @@ class ConfigManager:
                     index_kwargs["embedding_type"] = index_data["embedding_type"]
                 if "source_type" in index_data:
                     index_kwargs["source_type"] = index_data["source_type"]
+                if "tagset" in index_data:
+                    index_kwargs["tagset"] = index_data["tagset"]
                 indexes.append(IndexConfig(**index_kwargs))
 
             collection_configs[collection_data["name"]] = CollectionConfig(

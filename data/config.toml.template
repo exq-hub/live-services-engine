@@ -16,9 +16,14 @@ level = "INFO"
 # COLLECTION CONFIGURATIONS
 # Add a `[[collections]]` table for each collection, with one or more nested
 # `[[collections.indexes]]` tables. Set enabled = true to activate it.
+#
+# Each index picks its own `index_type` independently, "zarr" (the raw
+# embeddings file doubles as a brute-force index, no `index_file` needed)
+# or "faiss" (a separate ANN `index_file` alongside the embeddings). A
+# single collection can freely mix index types; nothing below ties a
+# collection as a whole to one backend.
 # ============================================================================
 
-# Zarr collection -- embeddings_file is used directly as the brute-force index:
 [[collections]]
 name = "collection1"
 enabled = true
@@ -39,27 +44,37 @@ original_media_url = "https://localhost:5001/collection1"
 # preload_all_indexes = false
 
   # A collection with more than one index must mark exactly one as
-  # default = true -- that's the index used when a request doesn't pick one.
+  # default = true, which will be the index used when a request doesn't pick one.
+  # No `tagset` is set here, so this index reads its item-to-position
+  # mapping from the default tagset name, "CLIP_hnsw Index ID".
   [[collections.indexes]]
-  name = "CLIP"
-  index_type = "zarr"
-  embeddings_file = "./data/collection1/embeddings.zipstore"
+  name = "CLIP_hnsw"
+  index_type = "faiss"
+  index_file = "./data/collection1/clip_hnsw.faiss"
+  embeddings_file = "./data/collection1/clip_embeddings.zipstore"
   default = true
 
-  # source_type tells the database which kind of media this index maps to
-  # ("Image", "Video", "Audio", "Text", or "Other"); defaults to "Image".
+  # A different embedding space entirely (e.g. text transcripts) is just
+  # another index in the same collection, with its own embedding_type,
+  # model, source_type, and its own index_type, "zarr" here, since
+  # each index picks its backend independently. source_type tells the
+  # database which kind of media this index maps to ("Image", "Video",
+  # "Audio", "Text", or "Other"); defaults to "Image".
   [[collections.indexes]]
   name = "Transcripts"
   index_type = "zarr"
-  embeddings_file = "./data/collection1/embeddings.zarr"
+  embeddings_file = "./data/collection1/transcript_embeddings.zarr"
   embedding_type = "Text"
   model_name = "your-sentence-transformers-model"
   source_type = "Text"
 
-# FAISS collection -- separate ANN index and raw embeddings required. A
-# collection can declare more than one index (e.g. a second index over a
-# different embedding space, such as text transcripts) by adding another
-# `[[collections.indexes]]` table with its own unique `name`.
+# A second collection, showing two ANN structures over the *same*
+# embedding space, built from the same vectors, in the same insertion
+# order, e.g. an HNSW graph for fast approximate search and an IVF+PQ
+# index for a smaller memory footprint. Both set `tagset` to the same
+# name, "CLIP", so they share one item-to-position mapping instead of
+# each getting its own duplicate one -- `tagset` is used verbatim, so
+# it doesn't have to follow the "<name> Index ID" convention at all.
 # [[collections]]
 # name = "collection2"
 # enabled = true
@@ -69,7 +84,16 @@ original_media_url = "https://localhost:5001/collection1"
 # log_directory = "./logs/collection2/"
 #
 #   [[collections.indexes]]
-#   name = "CLIP"
+#   name = "CLIP_hnsw"
 #   index_type = "faiss"
-#   index_file = "./data/collection2/clip_index.faiss"
-#   embeddings_file = "./data/collection2/embeddings.zip"
+#   index_file = "./data/collection2/clip_hnsw.faiss"
+#   embeddings_file = "./data/collection2/clip_embeddings.zipstore"
+#   tagset = "CLIP"
+#   default = true
+#
+#   [[collections.indexes]]
+#   name = "CLIP_ivfpq"
+#   index_type = "faiss"
+#   index_file = "./data/collection2/clip_ivfpq.faiss"
+#   embeddings_file = "./data/collection2/clip_embeddings.zipstore"
+#   tagset = "CLIP"
