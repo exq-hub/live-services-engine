@@ -179,13 +179,14 @@ async def get_indexes(
 
         raise HTTPException(status_code=404, detail=f"Unknown collection: {collection!r}")
 
+    default_index_name = collection_config.default_index.name
     return [
         {
             "name": index.name,
             "index_type": index.index_type,
             "embedding_type": index.embedding_type,
             "source_type": index.source_type,
-            "default": index.default,
+            "default": index.name == default_index_name,
         }
         for index in collection_config.indexes
     ]

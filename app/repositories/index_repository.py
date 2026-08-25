@@ -160,13 +160,16 @@ class IndexRepository:
         # , q_id: int = -1, resume: bool = False
     ) -> Tuple[List[int], List[float]]:
         """Search the ANN index for collection/index_name."""
+        index_name = self._resolve_index_name(collection, index_name)
         index = self.get_index(collection, index_name)
 
         try:
             _, indices, distances = index.search(query_vector, k, skip_ids=skip_ids)
             return indices, distances
         except Exception as e:
-            raise IndexError(f"Search failed for collection {collection}: {e}")
+            raise IndexError(
+                f"Search failed for collection {collection!r}, index {index_name!r}: {e}"
+            )
 
     def get_embeddings_array(
         self, collection: str, index_name: Optional[str] = None
