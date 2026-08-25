@@ -78,7 +78,7 @@ class SearchStrategy(ABC):
         pass
 
 
-class TextSearchStrategy(SearchStrategy):
+class TextSearchStrategyABC(SearchStrategy):
     """Abstract base class for text query-based search strategies.
 
     This class specializes the SearchStrategy interface for strategies
@@ -115,7 +115,7 @@ class TextSearchStrategy(SearchStrategy):
         pass
 
 
-class RFSearchStrategy(SearchStrategy):
+class RFSearchStrategyABC(SearchStrategy):
     """Abstract base class for relevance feedback search strategies.
 
     This class specializes the SearchStrategy interface for strategies
@@ -156,7 +156,7 @@ class RFSearchStrategy(SearchStrategy):
         pass
 
 
-class FacetedSearchStrategy(SearchStrategy):
+class FacetedSearchStrategyABC(SearchStrategy):
     """Abstract base class for faceted search strategies.
 
     This class specializes the SearchStrategy interface for strategies

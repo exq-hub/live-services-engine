@@ -46,6 +46,7 @@ class CLIPSearchStrategy(EmbeddingSearchStrategy):
 
     def _sync_encode_text(self, model_name: str, text: str) -> np.ndarray:
         "Synchronous text encoding function to be run in a thread pool."
+        # Model manager is a CLIPModelManager
         device = self.model_manager.device
         tokenizer = self.model_manager.get_tokenizer(model_name)
         text_model = self.model_manager.get_text_encoder(model_name)

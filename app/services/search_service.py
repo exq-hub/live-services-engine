@@ -36,9 +36,9 @@ from typing import Dict, List
 
 from ..strategies.base import (
     SearchStrategy,
-    TextSearchStrategy,
-    RFSearchStrategy,
-    FacetedSearchStrategy,
+    TextSearchStrategyABC,
+    RFSearchStrategyABC,
+    FacetedSearchStrategyABC,
 )
 from ..strategies.clip_search import CLIPSearchStrategy
 from ..strategies.text_search import TextEmbeddingSearchStrategy
@@ -93,7 +93,7 @@ class SearchService:
             raise SearchError(f"Unknown search strategy: {strategy_name}")
 
         strategy = self.strategies[strategy_name]
-        if not isinstance(strategy, TextSearchStrategy):
+        if not isinstance(strategy, TextSearchStrategyABC):
             raise SearchError(f"Strategy {strategy_name} does not support text search")
 
         start_time = int(time.time())
@@ -131,7 +131,7 @@ class SearchService:
     async def search_rf(self, request: RFSearchRequest) -> Dict:
         """Execute relevance feedback search."""
         strategy = self.strategies["rf"]
-        if not isinstance(strategy, RFSearchStrategy):
+        if not isinstance(strategy, RFSearchStrategyABC):
             raise SearchError("RF strategy not properly configured")
 
         start_time = int(time.time())
@@ -171,7 +171,7 @@ class SearchService:
     async def search_faceted(self, request: FacetedSearchRequest) -> Dict:
         """Execute faceted search"""
         strategy = self.strategies["faceted"]
-        if not isinstance(strategy, FacetedSearchStrategy):
+        if not isinstance(strategy, FacetedSearchStrategyABC):
             raise SearchError("Faceted strategy not properly configured")
 
         start_time = int(time.time())

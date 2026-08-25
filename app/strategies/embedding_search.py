@@ -44,7 +44,7 @@ from app.core.models import ModelManager
 from app.repositories.database_repository import DatabaseRepository
 from app.repositories.index_repository import IndexRepository
 
-from .base import TextSearchStrategy
+from .base import TextSearchStrategyABC
 from ..schemas import ActiveFilters
 from ..core.exceptions import SearchError
 
@@ -116,7 +116,7 @@ class VectorSearchMixin:
         return suggestions
 
 
-class EmbeddingSearchStrategy(VectorSearchMixin, TextSearchStrategy, ABC):
+class EmbeddingSearchStrategy(VectorSearchMixin, TextSearchStrategyABC, ABC):
     """Base for text-to-vector search strategies, one per embedding family."""
 
     embedding_type: ClassVar[str]

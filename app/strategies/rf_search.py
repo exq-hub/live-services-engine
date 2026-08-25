@@ -53,7 +53,7 @@ from app.core.models import CLIPModelManager, TextModelManager
 from app.repositories.database_repository import DatabaseRepository
 from app.repositories.index_repository import IndexRepository
 
-from .base import RFSearchStrategy
+from .base import RFSearchStrategyABC
 from .clip_search import CLIPSearchStrategy
 from .embedding_search import EmbeddingSearchStrategy, VectorSearchMixin
 from .text_search import TextEmbeddingSearchStrategy
@@ -61,7 +61,7 @@ from ..schemas import ActiveFilters
 from ..core.exceptions import SearchError
 
 
-class RFSearchStrategy(VectorSearchMixin, RFSearchStrategy):
+class RFSearchStrategy(VectorSearchMixin, RFSearchStrategyABC):
     """Relevance feedback search using Linear SVM."""
 
     def __init__(
