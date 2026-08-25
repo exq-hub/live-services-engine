@@ -205,8 +205,8 @@ class ZarrIndex(BaseIndex):
         skip_ids: Set[int] = frozenset(),
         q_id: int = -1,
         resume: bool = False,
-    ) -> Tuple[int, List[int]]:
-        return self.search(query, k, skip_ids, q_id)
+    ) -> Tuple[int, List[int], List[float]]:
+        return self.search(query, k, skip_ids)
 
 
 class FaissIndex(BaseIndex):
