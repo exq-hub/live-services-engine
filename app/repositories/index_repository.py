@@ -22,7 +22,7 @@ It holds the validated `LSEConfig` and resolves/loads a given
 (collection, index_name) pair straight from it on a cache miss -- there is
 no separate imperative "load" step. A collection's default index is loaded
 eagerly at startup (see `ApplicationContainer.initialize`); any other index
-loads lazily the first time something asks for it (e.g. `search_clip`,
+loads lazily the first time something asks for it (e.g. `search`,
 `get_embeddings_array`), or eagerly at startup too if the collection sets
 `preload_all_indexes`.
 
@@ -34,6 +34,7 @@ It provides a uniform interface for:
 - Checking query-state support for resumable searches (future capability).
 """
 
+from collections.abc import Set
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
@@ -53,7 +54,7 @@ class IndexRepository:
         self.config = config
         """Validated LSE configuration, used to resolve and load indexes on demand."""
 
-        self._clip_indices: Dict[Tuple[str, str], BaseIndex] = {}
+        self._indices: Dict[Tuple[str, str], BaseIndex] = {}
         """Loaded ANN indexes keyed by (collection, index_name)."""
 
         self._embeddings_zarr: Dict[Tuple[str, str], str] = {}
@@ -80,14 +81,14 @@ class IndexRepository:
         except ValueError as e:
             raise IndexError(f"{e} (collection {collection!r})")
 
-    def get_clip_index(
+    def get_index(
         self, collection: str, index_name: Optional[str] = None
     ) -> BaseIndex:
         """Get the ANN index for collection/index_name, loading it on demand."""
         index_name = self._resolve_index_name(collection, index_name)
         key = (collection, index_name)
-        if key in self._clip_indices:
-            return self._clip_indices[key]
+        if key in self._indices:
+            return self._indices[key]
 
         index_config = self._get_index_config(collection, index_name)
         try:
@@ -104,7 +105,7 @@ class IndexRepository:
 
             index_file = Path(index_path)
             if not index_file.exists():
-                raise IndexError(f"CLIP index file not found: {index_path}")
+                raise IndexError(f"Index file not found: {index_path}")
 
             index_obj.load_index(index_file)
 
@@ -113,7 +114,7 @@ class IndexRepository:
                 f"Failed to load index {index_name!r} for collection {collection!r}: {e}"
             )
 
-        self._clip_indices[key] = index_obj
+        self._indices[key] = index_obj
         return index_obj
 
     def get_embeddings_zarr_path(
@@ -135,37 +136,37 @@ class IndexRepository:
 
     def preload(self, collection: str, index_name: Optional[str] = None) -> None:
         """Eagerly load the ANN index and embeddings path for collection/index_name."""
-        self.get_clip_index(collection, index_name)
+        self.get_index(collection, index_name)
         self.get_embeddings_zarr_path(collection, index_name)
 
-    def is_query_in_state_clip(
+    def is_query_in_state(
         self, collection: str, state: int, index_name: Optional[str] = None
     ) -> bool:
         """Check if a query state exists for collection/index_name."""
-        index = self.get_clip_index(collection, index_name)
+        index = self.get_index(collection, index_name)
 
         if index.query_state_support:
             return index.is_query_in_state(state)
 
         return False
 
-    def search_clip(
+    def search(
         self,
         collection: str,
         query_vector: np.ndarray,
         k: int,
-        skip_ids: set[int] = set(),
+        skip_ids: Set[int] = set(),
         index_name: Optional[str] = None,
         # , q_id: int = -1, resume: bool = False
     ) -> Tuple[int, np.ndarray]:
         """Search the ANN index for collection/index_name."""
-        index = self.get_clip_index(collection, index_name)
+        index = self.get_index(collection, index_name)
 
         try:
             _, indices, distances = index.search(query_vector, k, skip_ids=skip_ids)
             return indices, distances
         except Exception as e:
-            raise IndexError(f"CLIP search failed for collection {collection}: {e}")
+            raise IndexError(f"Search failed for collection {collection}: {e}")
 
     def get_embeddings_array(
         self, collection: str, index_name: Optional[str] = None
@@ -184,9 +185,9 @@ class IndexRepository:
     def clear_cache(self, collection: Optional[str] = None):
         """Clear cached indices for a collection or all collections."""
         if collection:
-            for cache in (self._clip_indices, self._embeddings_zarr):
+            for cache in (self._indices, self._embeddings_zarr):
                 for key in [k for k in cache if k[0] == collection]:
                     cache.pop(key, None)
         else:
-            self._clip_indices.clear()
+            self._indices.clear()
             self._embeddings_zarr.clear()

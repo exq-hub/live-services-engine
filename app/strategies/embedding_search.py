@@ -108,7 +108,7 @@ class VectorSearchMixin:
             index_skip_ids = set(range(total_items)) - set(index_passed_ids)
             skip_ids.update(index_skip_ids)
 
-        indices, _ = self.index_repo.search_clip(
+        indices, _ = self.index_repo.search(
             collection, query_features, active_n, skip_ids=skip_ids, index_name=index_name
         )
         suggestions = self.database_repo.get_media_ids(collection, indices, index_name)

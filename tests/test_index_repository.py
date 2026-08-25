@@ -16,7 +16,7 @@
 """Tests for IndexRepository's lazy, config-driven loading.
 
 IndexRepository holds an `LSEConfig` and resolves/loads a collection's
-indexes on demand: a cache miss on `get_clip_index`/`get_embeddings_zarr_path`
+indexes on demand: a cache miss on `get_index`/`get_embeddings_zarr_path`
 triggers loading straight from config, defaulting to the collection's
 default index when no index_name is given. `preload()` is the eager path
 ApplicationContainer uses at startup for the default (and, for
@@ -79,42 +79,42 @@ def multi_index_config(write_config, dummy_files, tmp_path):
     return ConfigManager(str(path)).load_config()
 
 
-class TestGetClipIndex:
+class TestGetIndex:
     def test_loads_default_index_when_name_omitted(self, multi_index_config):
         repo = IndexRepository(multi_index_config)
-        index = repo.get_clip_index("testcol")
+        index = repo.get_index("testcol")
         assert index is not None
 
     def test_caches_across_calls(self, multi_index_config):
         repo = IndexRepository(multi_index_config)
-        first = repo.get_clip_index("testcol")
-        second = repo.get_clip_index("testcol")
+        first = repo.get_index("testcol")
+        second = repo.get_index("testcol")
         assert first is second
 
     def test_omitted_name_and_explicit_default_name_share_the_same_cache_entry(
         self, multi_index_config
     ):
         repo = IndexRepository(multi_index_config)
-        implicit = repo.get_clip_index("testcol")
-        explicit = repo.get_clip_index("testcol", "default_idx")
+        implicit = repo.get_index("testcol")
+        explicit = repo.get_index("testcol", "default_idx")
         assert implicit is explicit
 
     def test_loads_named_non_default_index(self, multi_index_config):
         repo = IndexRepository(multi_index_config)
-        default_index = repo.get_clip_index("testcol")
-        extra_index = repo.get_clip_index("testcol", "extra_idx")
+        default_index = repo.get_index("testcol")
+        extra_index = repo.get_index("testcol", "extra_idx")
         assert extra_index is not None
         assert extra_index is not default_index
 
     def test_unknown_collection_raises(self, multi_index_config):
         repo = IndexRepository(multi_index_config)
         with pytest.raises(IndexError):
-            repo.get_clip_index("does-not-exist")
+            repo.get_index("does-not-exist")
 
     def test_unknown_index_name_raises(self, multi_index_config):
         repo = IndexRepository(multi_index_config)
         with pytest.raises(IndexError):
-            repo.get_clip_index("testcol", "does-not-exist")
+            repo.get_index("testcol", "does-not-exist")
 
 
 class TestGetEmbeddingsZarrPath:
@@ -134,7 +134,7 @@ class TestPreload:
         repo = IndexRepository(multi_index_config)
         repo.preload("testcol", "extra_idx")
 
-        assert ("testcol", "extra_idx") in repo._clip_indices
+        assert ("testcol", "extra_idx") in repo._indices
         assert ("testcol", "extra_idx") in repo._embeddings_zarr
 
 
@@ -167,8 +167,8 @@ class TestClearCache:
 
         repo.clear_cache("col_a")
 
-        assert ("col_a", "idx") not in repo._clip_indices
-        assert ("col_b", "idx") in repo._clip_indices
+        assert ("col_a", "idx") not in repo._indices
+        assert ("col_b", "idx") in repo._indices
 
     def test_clear_cache_with_no_argument_clears_everything(self, multi_index_config):
         repo = IndexRepository(multi_index_config)
@@ -176,5 +176,5 @@ class TestClearCache:
 
         repo.clear_cache()
 
-        assert repo._clip_indices == {}
+        assert repo._indices == {}
         assert repo._embeddings_zarr == {}
