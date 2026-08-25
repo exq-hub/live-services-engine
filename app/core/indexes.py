@@ -92,6 +92,7 @@ class BaseIndex(ABC):
         query: np.ndarray | int,
         k: int,
         skip_ids: Set[int] = frozenset(),
+        q_id: int = -1,
         resume: bool = False,
     ) -> Tuple[int, List[int], List[float]]:
         """
@@ -155,7 +156,8 @@ class ZarrIndex(BaseIndex):
             self.index = self.index["embeddings"]
 
     def search(
-        self, query: np.ndarray, k: int, skip_ids: Set[int] = frozenset()
+        self, query: np.ndarray, k: int,
+        skip_ids: Set[int] = frozenset(), q_id: int = -1
     ) -> Tuple[int, List[int], List[float]]:
         if isinstance(query, int):
             raise ValueError("ZarrIndex does not support query by state id.")
@@ -200,8 +202,8 @@ class ZarrIndex(BaseIndex):
         query: np.ndarray,
         k: int,
         skip_ids: Set[int] = frozenset(),
+        q_id: int = -1,
         resume: bool = False,
-        q_id: int = 0,
     ) -> Tuple[int, List[int]]:
         return self.search(query, k, skip_ids, q_id)
 
@@ -255,6 +257,7 @@ class FaissIndex(BaseIndex):
         query: np.ndarray,
         k: int,
         skip_ids: Set[int] = frozenset(),
+        q_id: int = -1,
         resume: bool = False,
     ):
         cnt = 0
