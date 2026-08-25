@@ -31,6 +31,9 @@ implementations used by the search strategies:
 
 Both implementations accept a ``skip_ids`` set so that already-seen,
 excluded, or filter-rejected items can be skipped without post-filtering.
+Only ``VectorSearchMixin._search_with_expansion`` ever builds one; every
+``search``/``incremental_search`` here only reads it, hence the shared
+``frozenset()`` default.
 """
 
 from abc import ABC, abstractmethod
@@ -74,7 +77,7 @@ class BaseIndex(ABC):
 
     @abstractmethod
     def search(
-        self, query: np.ndarray | int, k: int, skip_ids: Set[int] = set()
+        self, query: np.ndarray | int, k: int, skip_ids: Set[int] = frozenset()
     ) -> Tuple[int, List[int], List[float]]:
         """
         Search for the top k items to the given query vector or query id if using query states.
@@ -88,7 +91,7 @@ class BaseIndex(ABC):
         self,
         query: np.ndarray | int,
         k: int,
-        skip_ids: Set[int] = set(),
+        skip_ids: Set[int] = frozenset(),
         resume: bool = False,
     ) -> Tuple[int, List[int], List[float]]:
         """
@@ -152,7 +155,7 @@ class ZarrIndex(BaseIndex):
             self.index = self.index["embeddings"]
 
     def search(
-        self, query: np.ndarray, k: int, skip_ids: Set[int] = set()
+        self, query: np.ndarray, k: int, skip_ids: Set[int] = frozenset()
     ) -> Tuple[int, List[int], List[float]]:
         if isinstance(query, int):
             raise ValueError("ZarrIndex does not support query by state id.")
@@ -196,7 +199,7 @@ class ZarrIndex(BaseIndex):
         self,
         query: np.ndarray,
         k: int,
-        skip_ids: Set[int] = set(),
+        skip_ids: Set[int] = frozenset(),
         resume: bool = False,
         q_id: int = 0,
     ) -> Tuple[int, List[int]]:
@@ -236,7 +239,7 @@ class FaissIndex(BaseIndex):
                 )
 
     def search(
-        self, query: np.ndarray, k: int, skip_ids: Set[int] = set()
+        self, query: np.ndarray, k: int, skip_ids: Set[int] = frozenset()
     ) -> Tuple[int, List[int], List[float]]:
         if isinstance(query, int):
             raise ValueError("FaissIndex does not support query by state id.")
@@ -251,7 +254,7 @@ class FaissIndex(BaseIndex):
         self,
         query: np.ndarray,
         k: int,
-        skip_ids: Set[int] = set(),
+        skip_ids: Set[int] = frozenset(),
         resume: bool = False,
     ):
         cnt = 0

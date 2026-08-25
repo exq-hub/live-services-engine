@@ -155,7 +155,7 @@ class IndexRepository:
         collection: str,
         query_vector: np.ndarray,
         k: int,
-        skip_ids: Set[int] = set(),
+        skip_ids: Set[int] = frozenset(),
         index_name: Optional[str] = None,
         # , q_id: int = -1, resume: bool = False
     ) -> Tuple[int, np.ndarray]:
