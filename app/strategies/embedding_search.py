@@ -88,12 +88,14 @@ class VectorSearchMixin:
         skip_ids = set()
         if len(seen_set) != 0:
             skip_ids.update(
-                self.database_repo.get_index_ids(collection, list(seen_set), index_name)
+                self.database_repo.get_index_ids(
+                    collection, list(seen_set), index_name, skip_unmapped=True
+                )
             )
         if len(excluded_set) != 0:
             skip_ids.update(
                 self.database_repo.get_index_ids(
-                    collection, list(excluded_set), index_name
+                    collection, list(excluded_set), index_name, skip_unmapped=True
                 )
             )
 
@@ -103,7 +105,7 @@ class VectorSearchMixin:
             #       If it is lower than a certain threshold we can search through the subset with
             #       the zarr embeddings array directly
             index_passed_ids = self.database_repo.get_index_ids(
-                collection, passed_ids, index_name
+                collection, passed_ids, index_name, skip_unmapped=True
             )
             index_skip_ids = set(range(total_items)) - set(index_passed_ids)
             skip_ids.update(index_skip_ids)

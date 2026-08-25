@@ -212,6 +212,85 @@ class TestGetMediaIdsAndIndexIds:
         assert repo.get_index_ids("testcol", [20], index="Text") == [0]
 
 
+class TestSkipUnmappedIndexIds:
+    def test_default_still_raises_for_a_media_id_outside_the_index(
+        self, multi_index_db_config
+    ):
+        repo = _load(multi_index_db_config)
+        with pytest.raises(DatabaseError):
+            repo.get_index_ids("testcol", [10, 20], index="CLIP")
+
+    def test_skip_unmapped_drops_a_media_id_outside_the_index(
+        self, multi_index_db_config
+    ):
+        repo = _load(multi_index_db_config)
+        result = repo.get_index_ids(
+            "testcol", [10, 20], index="CLIP", skip_unmapped=True
+        )
+        assert result == [0]
+
+    def test_skip_unmapped_drops_a_position_outside_the_index_range(
+        self, write_config, dummy_files, tmp_path
+    ):
+        db_path = tmp_path / "collection.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.executescript(
+            """
+            CREATE TABLE tag_types (id INTEGER PRIMARY KEY, description TEXT);
+            CREATE TABLE source_types (id INTEGER PRIMARY KEY, name TEXT);
+            CREATE TABLE tagsets (id INTEGER PRIMARY KEY, name TEXT, tagtype_id INTEGER);
+            CREATE TABLE medias (
+                id INTEGER PRIMARY KEY,
+                source TEXT,
+                source_type INTEGER,
+                thumbnail_uri TEXT,
+                group_id INTEGER
+            );
+            CREATE TABLE taggings (media_id INTEGER, tag_id INTEGER);
+            CREATE TABLE numerical_int_tags (
+                id INTEGER PRIMARY KEY,
+                value INTEGER,
+                tagset_id INTEGER
+            );
+
+            INSERT INTO source_types (id, name) VALUES (1, 'Image');
+            INSERT INTO tag_types (id, description) VALUES (1, 'numerical_int');
+            INSERT INTO tagsets (id, name, tagtype_id) VALUES (1, 'CLIP Index ID', 1);
+
+            INSERT INTO medias (id, source, source_type, thumbnail_uri, group_id) VALUES
+                (10, 'img1.jpg', 1, 'thumb1.jpg', 100),
+                (99, 'bad.jpg', 1, 'thumb_bad.jpg', 999);
+
+            INSERT INTO numerical_int_tags (id, value, tagset_id) VALUES
+                (1000, 0, 1), (1001, 5, 1);
+            INSERT INTO taggings (media_id, tag_id) VALUES
+                (10, 1000), (99, 1001);
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        collection = collection_toml(
+            name="testcol",
+            database_file=str(db_path),
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=index_toml(
+                name="CLIP",
+                index_type="zarr",
+                embeddings_file=dummy_files["embeddings_file"],
+            ),
+        )
+        path = write_config(collection)
+        config = ConfigManager(str(path)).load_config()
+        repo = _load(config)
+
+        assert repo.get_total_items("testcol", "CLIP") == 2
+
+        result = repo.get_index_ids("testcol", [10, 99], index="CLIP", skip_unmapped=True)
+        assert result == [0]
+
+
 class TestSourceTypeFiltering:
     def test_each_index_only_maps_medias_matching_its_own_source_type(
         self, multi_index_db_config

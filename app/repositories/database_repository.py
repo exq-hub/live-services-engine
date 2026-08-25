@@ -316,16 +316,39 @@ class DatabaseRepository:
             )
 
     def get_index_ids(
-        self, collection, media_ids: list[int], index: Optional[str] = None
+        self,
+        collection,
+        media_ids: list[int],
+        index: Optional[str] = None,
+        skip_unmapped: bool = False,
     ) -> list[int]:
+        """Map media IDs to their positions in collection/index.
+
+        Args:
+            collection: Name of the collection
+            media_ids: Media IDs to map
+            index: Name of the index; defaults to the collection's default index
+            skip_unmapped: If True, silently drop any media ID that doesn't
+                belong to this index instead of raising for callers like
+                "seen"/"excluded"/filtered ids, where an unrelated id is a
+                no-op, not an error. Explicit RF pos/neg samples should stay
+                strict (the default), since an out-of-index id there is more
+                likely a real caller bug.
+        """
         index = self._resolve_index_name(collection, index)
         self._ensure_index_mapping(collection, index)
+        mapping = self._rev_item_datapoint_mapping_cache[collection][index]
         try:
-            return [
-                self._rev_item_datapoint_mapping_cache[collection][index][idx]
-                for idx in media_ids
-                if idx != -1
-            ]
+            if skip_unmapped:
+                total_items = len(self._item_datapoint_mapping_cache[collection][index])
+                return [
+                    position
+                    for idx in media_ids
+                    if idx != -1
+                    and (position := mapping.get(idx)) is not None
+                    and 0 <= position < total_items
+                ]
+            return [mapping[idx] for idx in media_ids if idx != -1]
         except Exception as e:
             raise DatabaseError(
                 f"Failed to map media IDs ({media_ids}) to index IDs for collection {collection}: {e}"
