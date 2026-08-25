@@ -276,7 +276,7 @@ class DatabaseRepository:
             cursor = self._db_connection[collection].cursor()
             if tagtype_id not in self._tagtype_cache[collection]:
                 raise DatabaseError(
-                    f"Tagtype with id {tagtype_id} not found in collection {collection}: {e}"
+                    f"Tagtype with id {tagtype_id} not found in collection {collection}"
                 )
 
             rows = cursor.execute(
