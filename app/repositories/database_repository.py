@@ -640,7 +640,7 @@ class DatabaseRepository:
                     """
                     SELECT id
                     FROM medias m
-                    WHERE m.group_id IN (SELECT media_id FROM temp_passed_gid)
+                    WHERE m.group_id IN (SELECT id FROM temp_passed_gid)
                     """
                 ).fetchall()
                 cursor.execute("DROP TABLE temp_passed_gid")
