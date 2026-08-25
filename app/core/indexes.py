@@ -77,7 +77,8 @@ class BaseIndex(ABC):
 
     @abstractmethod
     def search(
-        self, query: np.ndarray | int, k: int, skip_ids: Set[int] = frozenset()
+        self, query: np.ndarray | int, k: int,
+        skip_ids: Set[int] = frozenset()
     ) -> Tuple[int, List[int], List[float]]:
         """
         Search for the top k items to the given query vector or query id if using query states.
@@ -157,7 +158,7 @@ class ZarrIndex(BaseIndex):
 
     def search(
         self, query: np.ndarray, k: int,
-        skip_ids: Set[int] = frozenset(), q_id: int = -1
+        skip_ids: Set[int] = frozenset()
     ) -> Tuple[int, List[int], List[float]]:
         if isinstance(query, int):
             raise ValueError("ZarrIndex does not support query by state id.")
