@@ -351,7 +351,7 @@ class DatabaseRepository:
             return [mapping[idx] for idx in media_ids if idx != -1]
         except Exception as e:
             raise DatabaseError(
-                f"Failed to map media IDs ({media_ids}) to index IDs for collection {collection}: {e}"
+                f"Failed to map media IDs ({media_ids}) to index IDs for collection {collection}, index {index}: {e}"
             )
 
     def get_media_metadata(
@@ -600,7 +600,10 @@ class DatabaseRepository:
             index: Name of the index; defaults to the collection's default index
 
         Returns:
-            Total number of items, or 0 if collection not loaded
+            Total number of items in the index
+
+        Raises:
+            DatabaseError: If the collection or index is unknown
         """
         index = self._resolve_index_name(collection, index)
         self._ensure_index_mapping(collection, index)
