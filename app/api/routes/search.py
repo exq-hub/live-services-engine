@@ -63,6 +63,7 @@ async def clip_search(
             request.session_info.collection,
             {
                 "query": request.text,
+                "index_name": request.index_name,
                 "n_seen": len(request.seen or []),
                 "filters": request.filters.model_dump_json()
                 if request.filters
@@ -102,6 +103,7 @@ async def text_search(
             request.session_info.collection,
             {
                 "query": request.text,
+                "index_name": request.index_name,
                 "n_seen": len(request.seen or []),
                 "filters": request.filters.model_dump_json()
                 if request.filters
@@ -142,6 +144,7 @@ async def rf_search(
             {
                 "pos": request.pos,
                 "neg": request.neg,
+                "index_name": request.index_name,
                 "n_seen": len(request.seen),
                 "filters": request.filters.model_dump_json()
                 if request.filters
