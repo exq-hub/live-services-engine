@@ -26,23 +26,30 @@ contains:
   where tag values are stored in type-specific tables (e.g.
   ``categorical_tags``, ``numerical_int_tags``) and linked to media items
   via the ``taggings`` join table.
-- **Index mapping** -- a special ``CLIP Index ID`` tagset in
-  ``numerical_int_tags`` that maps each media item to its position in the
-  CLIP vector index, enabling bidirectional translation between media IDs
-  and index IDs.
+- **Index mapping** -- each configured index reads its item-to-position
+  mapping from a tagset in ``numerical_int_tags`` (its ``tagset_name``,
+  which defaults to ``<index name> Index ID``) that maps each media item
+  to its position in that index, enabling bidirectional translation
+  between media IDs and index IDs.
 
-The repository caches database connections and index mappings per collection
-and provides methods for item retrieval, filter evaluation (via
-`db_helper.compile_active_filters`), and related-item lookups.
+The repository caches database connections and index mappings per
+collection and provides methods for item retrieval, filter evaluation
+(via `db_helper.compile_active_filters`), and related-item lookups.
+
+Id mappings load lazily from `config` on first use, same as
+`IndexRepository`: a collection's default index loads eagerly in
+`load_database`; any other index loads the first time something asks
+for it (or eagerly too, for a `preload_all_indexes` collection).
 """
 
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.repositories import db_helper
 from app.schemas import ActiveFilters
 
+from ..core.config import IndexConfig, LSEConfig
 from ..core.exceptions import DatabaseError
 
 import pandas as pd
@@ -55,8 +62,11 @@ class DatabaseRepository:
     operations, and related item mappings.
     """
 
-    def __init__(self):
+    def __init__(self, config: LSEConfig):
         """Initialize the metadata repository with empty caches."""
+        self.config = config
+        """Validated LSE configuration, used to resolve and build id mappings on demand."""
+
         self._db_connection: Dict[str, sqlite3.Connection] = {}
         """Per-collection SQLite connections keyed by collection name."""
 
@@ -64,22 +74,22 @@ class DatabaseRepository:
         """Per-collection database file paths."""
 
         self._db_type: Dict[str, str] = {}
-        """Per-collection database backend type (e.g. ``'sqlite'``, ``'duckdb'``)."""
+        """Per-collection database backend type (e.g. ``'sqlite'``, ``'duckdb'``, ``'postgres'``)."""
 
         self._item_datapoint_mapping_cache: Dict[str, Dict[str, Dict[int, int]]] = {}
-        """Nested mapping: ``collection -> index_type -> index_id -> media_id``."""
+        """Nested mapping: ``collection -> index_name -> index_id -> media_id``."""
 
         self._rev_item_datapoint_mapping_cache: Dict[
             str, Dict[str, Dict[int, int]]
         ] = {}
-        """Reverse mapping: ``collection -> index_type -> media_id -> index_id``."""
-        
+        """Reverse mapping: ``collection -> index_name -> media_id -> index_id``."""
+
         self._group_media_ids: Set[int] = set()
         """Group Media IDs: A set of all ids for medias that represent a group (e.g., a video)."""
 
         self._tagtype_cache: Dict[str, Dict[int, str]] = {}
         """Per-collection tag-type lookup: ``collection -> tagtype_id -> tagtype_name``."""
-        
+
         self._sqlite_limit = 999
         """SQLite has a default limit of 999 parameters per query, so we may need to batch queries that exceed this limit."""
 
@@ -98,12 +108,13 @@ class DatabaseRepository:
         database: str = "sqlite",
     ) -> None:
         """
-        Open connection to the database file and create item to datapoint mapping
-        with the provided manifest file.
+        Open connection to the database file and build the id mapping for
+        the collection's default index (and, for a preload_all_indexes
+        collection, every other index too).
 
         Args:
             collection: Name of the collection to load metadata for
-            metadata_file: Path to the JSON file containing metadata
+            database_file: Path to the collection's database file
 
         Raises:
             DatabaseError: If file doesn't exist or connection fails
@@ -122,7 +133,7 @@ class DatabaseRepository:
                     self._db_connection[collection]
                     .execute(
                         """
-                        SELECT id, description as name 
+                        SELECT id, description as name
                         FROM tag_types
                         """
                     )
@@ -131,10 +142,6 @@ class DatabaseRepository:
                 self._tagtype_cache[collection] = {row[0]: row[1] for row in rows}
             self._item_datapoint_mapping_cache[collection] = {}
             self._rev_item_datapoint_mapping_cache[collection] = {}
-            (
-                self._item_datapoint_mapping_cache[collection]["clip"],
-                self._rev_item_datapoint_mapping_cache[collection]["clip"],
-            ) = self.create_item_to_datapoint_mapping(collection, source_type=1)
             self._group_media_ids = set([
                 row[0] for row in self._db_connection[collection]
                 .execute(
@@ -144,10 +151,52 @@ class DatabaseRepository:
                 ).fetchall()
             ])
 
-            # TODO: Check for other index types
+            collection_config = self.config.collection_configs[collection]
+            default_index = collection_config.default_index
+            self._ensure_index_mapping(collection, default_index.name)
+
+            if collection_config.preload_all_indexes:
+                for index in collection_config.indexes:
+                    if index.name != default_index.name:
+                        self._ensure_index_mapping(collection, index.name)
 
         except Exception as e:
-            raise DatabaseError(f"Failed to load database from {db_path}: {e}")
+            raise DatabaseError(f"Failed to load database from {database_file}: {e}")
+
+    def _resolve_index_name(self, collection: str, index_name: Optional[str]) -> str:
+        """Default to the collection's default index when none is given."""
+        if index_name is not None:
+            return index_name
+        try:
+            collection_config = self.config.collection_configs[collection]
+        except KeyError:
+            raise DatabaseError(f"Unknown collection: {collection!r}")
+        return collection_config.default_index.name
+
+    def _ensure_index_mapping(self, collection: str, index_name: str) -> None:
+        """Build the id mapping for collection/index_name on demand if not already cached."""
+        if index_name in self._item_datapoint_mapping_cache.get(collection, {}):
+            return
+
+        try:
+            collection_config = self.config.collection_configs[collection]
+        except KeyError:
+            raise DatabaseError(f"Unknown collection: {collection!r}")
+
+        try:
+            index_config = collection_config.get_index(index_name)
+        except ValueError as e:
+            raise DatabaseError(f"{e} (collection {collection!r})")
+
+        mapping, rev_mapping = self.create_item_to_datapoint_mapping(
+            collection, index_config
+        )
+        self._item_datapoint_mapping_cache.setdefault(collection, {})[index_name] = (
+            mapping
+        )
+        self._rev_item_datapoint_mapping_cache.setdefault(collection, {})[
+            index_name
+        ] = rev_mapping
 
     def is_loaded(self, collection: str) -> bool:
         """Check if the database for the specified collection is loaded.
@@ -227,7 +276,7 @@ class DatabaseRepository:
             cursor = self._db_connection[collection].cursor()
             if tagtype_id not in self._tagtype_cache[collection]:
                 raise DatabaseError(
-                    f"Tagtype with id {tagtype_id} not found in collection {collection}: {e}"
+                    f"Tagtype with id {tagtype_id} not found in collection {collection}"
                 )
 
             rows = cursor.execute(
@@ -251,8 +300,10 @@ class DatabaseRepository:
                 cursor.close()
 
     def get_media_ids(
-        self, collection, index_ids: list[int], index="clip"
+        self, collection, index_ids: list[int], index: Optional[str] = None
     ) -> list[int]:
+        index = self._resolve_index_name(collection, index)
+        self._ensure_index_mapping(collection, index)
         try:
             return [
                 self._item_datapoint_mapping_cache[collection][index][idx]
@@ -265,17 +316,42 @@ class DatabaseRepository:
             )
 
     def get_index_ids(
-        self, collection, media_ids: list[int], index="clip"
+        self,
+        collection,
+        media_ids: list[int],
+        index: Optional[str] = None,
+        skip_unmapped: bool = False,
     ) -> list[int]:
+        """Map media IDs to their positions in collection/index.
+
+        Args:
+            collection: Name of the collection
+            media_ids: Media IDs to map
+            index: Name of the index; defaults to the collection's default index
+            skip_unmapped: If True, silently drop any media ID that doesn't
+                belong to this index instead of raising for callers like
+                "seen"/"excluded"/filtered ids, where an unrelated id is a
+                no-op, not an error. Explicit RF pos/neg samples should stay
+                strict (the default), since an out-of-index id there is more
+                likely a real caller bug.
+        """
+        index = self._resolve_index_name(collection, index)
+        self._ensure_index_mapping(collection, index)
+        mapping = self._rev_item_datapoint_mapping_cache[collection][index]
         try:
-            return [
-                self._rev_item_datapoint_mapping_cache[collection][index][idx]
-                for idx in media_ids
-                if idx != -1
-            ]
+            if skip_unmapped:
+                total_items = len(self._item_datapoint_mapping_cache[collection][index])
+                return [
+                    position
+                    for idx in media_ids
+                    if idx != -1
+                    and (position := mapping.get(idx)) is not None
+                    and 0 <= position < total_items
+                ]
+            return [mapping[idx] for idx in media_ids if idx != -1]
         except Exception as e:
             raise DatabaseError(
-                f"Failed to map media IDs ({media_ids}) to index IDs for collection {collection}: {e}"
+                f"Failed to map media IDs ({media_ids}) to index IDs for collection {collection}, index {index}: {e}"
             )
 
     def get_media_metadata(
@@ -284,7 +360,6 @@ class DatabaseRepository:
         media_id: int,
         collection: str,
         filters: List[int] = [],
-        index: str = "clip",
     ) -> Dict[str, Any]:
         """Retrieve metadata for a specific media item.
 
@@ -292,7 +367,6 @@ class DatabaseRepository:
             cursor: Database cursor
             media_id: ID of the media item
             filters: List of metadata fields to include, if empty include all
-            mapped: Whether the item_id is already mapped to media_id
 
         Returns:
             Metadata dictionary for the media item
@@ -518,15 +592,21 @@ class DatabaseRepository:
             if cursor:
                 cursor.close()
 
-    def get_total_items(self, collection: str, index="clip") -> int:
-        """Get the total count of items in the specified collection.
+    def get_total_items(self, collection: str, index: Optional[str] = None) -> int:
+        """Get the total count of items in the specified collection/index.
 
         Args:
             collection: Name of the collection
+            index: Name of the index; defaults to the collection's default index
 
         Returns:
-            Total number of items, or 0 if collection not loaded
+            Total number of items in the index
+
+        Raises:
+            DatabaseError: If the collection or index is unknown
         """
+        index = self._resolve_index_name(collection, index)
+        self._ensure_index_mapping(collection, index)
         try:
             return len(self._item_datapoint_mapping_cache[collection][index])
         except Exception as e:
@@ -560,10 +640,10 @@ class DatabaseRepository:
                 cursor.execute("CREATE TEMPORARY TABLE temp_passed_gid (id INTEGER PRIMARY KEY)")
                 cursor.executemany("INSERT INTO temp_passed_gid (id) VALUES (?)", [(gid,) for gid in group_ids])
                 group_medias = cursor.execute(
-                    f"""
+                    """
                     SELECT id
                     FROM medias m
-                    WHERE m.group_id IN (SELECT media_id FROM temp_passed_gid)
+                    WHERE m.group_id IN (SELECT id FROM temp_passed_gid)
                     """
                 ).fetchall()
                 cursor.execute("DROP TABLE temp_passed_gid")
@@ -590,38 +670,41 @@ class DatabaseRepository:
                 cursor.close()
 
     def create_item_to_datapoint_mapping(
-        self, collection: str, source_type: int = 1
-    ) -> Dict[str, int]:
-        """Create a mapping from item IDs to their datapoint indices.
+        self, collection: str, index_config: IndexConfig
+    ) -> Tuple[Dict[int, int], Dict[int, int]]:
+        """Create a mapping from item IDs to their datapoint indices for one index.
 
-        This is useful for converting between item identifiers and their
-        positions in embedding matrices or other indexed data structures.
+        Reads `index_config.tagset_name`, resolving `index_config.source_type`
+        (e.g. "Image") against the database's own source_types table
+        rather than assuming fixed IDs, and using it to filter the mapped
+        medias to the expected kind.
 
         Args:
             collection: Name of the collection
-            manifest_file: Text file listing file paths of datapoints in order
+            index_config: The index whose id mapping to build
 
         Returns:
-            Dictionary mapping index ids to
+            (mapping, rev_mapping): index_id -> media_id and media_id -> index_id
         """
         cursor = None
         try:
             cursor = self._db_connection[collection].cursor()
             if self._db_type[collection] == "sqlite":
-                rows = cursor.execute(
-                    """
-                    SELECT id, source
-                    FROM medias
-                    WHERE group_id IS NOT NULL
-                    AND source_type = ?
-                    ORDER BY id
-                    """,
-                    [source_type],
-                )
+                source_type_row = cursor.execute(
+                    "SELECT id FROM source_types WHERE name = ?",
+                    [index_config.source_type],
+                ).fetchone()
+                if source_type_row is None:
+                    raise DatabaseError(
+                        f"Unknown source_type {index_config.source_type!r} for collection {collection!r}"
+                    )
+                source_type_id = source_type_row[0]
+
                 mapping = {}
                 rev_mapping = {}
                 ts_id = cursor.execute(
-                    "SELECT id FROM tagsets WHERE name = 'CLIP Index ID'"
+                    "SELECT id FROM tagsets WHERE name = ?",
+                    [index_config.tagset_name],
                 ).fetchone()
 
                 if ts_id is not None:
@@ -634,8 +717,9 @@ class DatabaseRepository:
                         JOIN taggings tgs ON m.id = tgs.media_id
                         JOIN numerical_int_tags nit ON tgs.tag_id = nit.id
                         WHERE nit.tagset_id = ?
+                        AND m.source_type = ?
                         """,
-                        [ts_id],
+                        [ts_id, source_type_id],
                     ).fetchall()
                     for media_id, index_id in res:
                         mapping[index_id] = media_id
@@ -643,13 +727,15 @@ class DatabaseRepository:
 
                 if mapping == {}:
                     raise DatabaseError(
-                        f"No valid item to datapoint mapping could be created for collection {collection}"
+                        f"No valid item to datapoint mapping could be created for "
+                        f"collection {collection}, index {index_config.name!r}"
                     )
 
                 return mapping, rev_mapping
         except Exception as e:
             raise DatabaseError(
-                f"Failed to create item to datapoint mapping for collection {collection}: {e}"
+                f"Failed to create item to datapoint mapping for collection "
+                f"{collection}, index {index_config.name!r}: {e}"
             )
         finally:
             if cursor:

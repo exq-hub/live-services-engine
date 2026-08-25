@@ -280,6 +280,7 @@ class TestMultipleIndexesPerCollection:
                     index_type="faiss",
                     embeddings_file=dummy_files["embeddings_file"],
                     index_file=dummy_files["index_file"],
+                    default=True,
                 ),
                 index_toml(
                     name="zarr_idx",
@@ -302,6 +303,461 @@ class TestMultipleIndexesPerCollection:
         loaded = config.collection_configs["testcol"].indexes
         assert [idx.name for idx in loaded] == ["faiss_idx", "zarr_idx"]
         assert [idx.index_type for idx in loaded] == ["faiss", "zarr"]
+
+
+class TestModelNameAndDefaultIndex:
+    def test_model_name_defaults_to_the_hardcoded_clip_model(
+        self, write_config, dummy_files
+    ):
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=index_toml(
+                name="primary",
+                index_type="zarr",
+                embeddings_file=dummy_files["embeddings_file"],
+                model_name=None,
+            ),
+        )
+        path = write_config(collection)
+
+        config = ConfigManager(str(path)).load_config()
+
+        assert (
+            config.collection_configs["testcol"].indexes[0].model_name
+            == "ViT-SO400M-14-SigLIP-384"
+        )
+
+    def test_model_name_can_be_overridden(self, write_config, dummy_files):
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=index_toml(
+                name="primary",
+                index_type="zarr",
+                embeddings_file=dummy_files["embeddings_file"],
+                model_name="a-different-embedding-model",
+            ),
+        )
+        path = write_config(collection)
+
+        config = ConfigManager(str(path)).load_config()
+
+        assert (
+            config.collection_configs["testcol"].indexes[0].model_name
+            == "a-different-embedding-model"
+        )
+
+    def test_single_index_is_the_default_without_the_flag(
+        self, write_config, minimal_collection_toml
+    ):
+        path = write_config(minimal_collection_toml)
+
+        config = ConfigManager(str(path)).load_config()
+
+        collection = config.collection_configs["testcol"]
+        assert collection.default_index is collection.indexes[0]
+
+    def test_multi_index_default_resolves_to_the_flagged_index(
+        self, write_config, dummy_files
+    ):
+        indexes = "\n".join(
+            [
+                index_toml(
+                    name="faiss_idx",
+                    index_type="faiss",
+                    embeddings_file=dummy_files["embeddings_file"],
+                    index_file=dummy_files["index_file"],
+                ),
+                index_toml(
+                    name="zarr_idx",
+                    index_type="zarr",
+                    embeddings_file=dummy_files["embeddings_file"],
+                    default=True,
+                ),
+            ]
+        )
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=indexes,
+        )
+        path = write_config(collection)
+
+        config = ConfigManager(str(path)).load_config()
+
+        collection_config = config.collection_configs["testcol"]
+        assert collection_config.default_index.name == "zarr_idx"
+
+    def test_multi_index_with_no_default_raises(self, write_config, dummy_files):
+        indexes = "\n".join(
+            [
+                index_toml(
+                    name="faiss_idx",
+                    index_type="faiss",
+                    embeddings_file=dummy_files["embeddings_file"],
+                    index_file=dummy_files["index_file"],
+                ),
+                index_toml(
+                    name="zarr_idx",
+                    index_type="zarr",
+                    embeddings_file=dummy_files["embeddings_file"],
+                ),
+            ]
+        )
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=indexes,
+        )
+        path = write_config(collection)
+
+        with pytest.raises(ConfigurationError):
+            ConfigManager(str(path)).load_config()
+
+    def test_multi_index_with_two_defaults_raises(self, write_config, dummy_files):
+        indexes = "\n".join(
+            [
+                index_toml(
+                    name="faiss_idx",
+                    index_type="faiss",
+                    embeddings_file=dummy_files["embeddings_file"],
+                    index_file=dummy_files["index_file"],
+                    default=True,
+                ),
+                index_toml(
+                    name="zarr_idx",
+                    index_type="zarr",
+                    embeddings_file=dummy_files["embeddings_file"],
+                    default=True,
+                ),
+            ]
+        )
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=indexes,
+        )
+        path = write_config(collection)
+
+        with pytest.raises(ConfigurationError):
+            ConfigManager(str(path)).load_config()
+
+    def test_embedding_type_defaults_to_clip(self, write_config, dummy_files):
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=index_toml(
+                name="primary",
+                index_type="zarr",
+                embeddings_file=dummy_files["embeddings_file"],
+            ),
+        )
+        path = write_config(collection)
+
+        config = ConfigManager(str(path)).load_config()
+
+        assert config.collection_configs["testcol"].indexes[0].embedding_type == "CLIP"
+
+    def test_embedding_type_can_be_text(self, write_config, dummy_files):
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=index_toml(
+                name="transcripts",
+                index_type="zarr",
+                embeddings_file=dummy_files["embeddings_file"],
+                embedding_type="Text",
+            ),
+        )
+        path = write_config(collection)
+
+        config = ConfigManager(str(path)).load_config()
+
+        assert config.collection_configs["testcol"].indexes[0].embedding_type == "Text"
+
+    def test_embedding_type_rejects_unknown_value(self, write_config, dummy_files):
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=index_toml(
+                name="primary",
+                index_type="zarr",
+                embeddings_file=dummy_files["embeddings_file"],
+                embedding_type="Audio",
+            ),
+        )
+        path = write_config(collection)
+
+        with pytest.raises(ConfigurationError):
+            ConfigManager(str(path)).load_config()
+
+    def test_preload_all_indexes_defaults_to_false(self, write_config, dummy_files):
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=index_toml(
+                name="primary",
+                index_type="zarr",
+                embeddings_file=dummy_files["embeddings_file"],
+            ),
+        )
+        path = write_config(collection)
+
+        config = ConfigManager(str(path)).load_config()
+
+        assert config.collection_configs["testcol"].preload_all_indexes is False
+
+    def test_preload_all_indexes_can_be_enabled(self, write_config, dummy_files):
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=index_toml(
+                name="primary",
+                index_type="zarr",
+                embeddings_file=dummy_files["embeddings_file"],
+            ),
+            preload_all_indexes=True,
+        )
+        path = write_config(collection)
+
+        config = ConfigManager(str(path)).load_config()
+
+        assert config.collection_configs["testcol"].preload_all_indexes is True
+
+    def test_source_type_defaults_to_image(self, write_config, dummy_files):
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=index_toml(
+                name="primary",
+                index_type="zarr",
+                embeddings_file=dummy_files["embeddings_file"],
+            ),
+        )
+        path = write_config(collection)
+
+        config = ConfigManager(str(path)).load_config()
+
+        assert config.collection_configs["testcol"].indexes[0].source_type == "Image"
+
+    def test_source_type_can_be_set_to_a_known_value(self, write_config, dummy_files):
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=index_toml(
+                name="transcripts",
+                index_type="zarr",
+                embeddings_file=dummy_files["embeddings_file"],
+                source_type="Text",
+            ),
+        )
+        path = write_config(collection)
+
+        config = ConfigManager(str(path)).load_config()
+
+        assert config.collection_configs["testcol"].indexes[0].source_type == "Text"
+
+    def test_source_type_rejects_unknown_value(self, write_config, dummy_files):
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=index_toml(
+                name="primary",
+                index_type="zarr",
+                embeddings_file=dummy_files["embeddings_file"],
+                source_type="Smell",
+            ),
+        )
+        path = write_config(collection)
+
+        with pytest.raises(ConfigurationError):
+            ConfigManager(str(path)).load_config()
+
+
+class TestTagsetName:
+    def test_tagset_name_defaults_to_name_based_on_index_name(
+        self, write_config, dummy_files
+    ):
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=index_toml(
+                name="SigLIP_hnsw",
+                index_type="zarr",
+                embeddings_file=dummy_files["embeddings_file"],
+            ),
+        )
+        path = write_config(collection)
+
+        config = ConfigManager(str(path)).load_config()
+
+        index = config.collection_configs["testcol"].indexes[0]
+        assert index.tagset_name == "SigLIP_hnsw Index ID"
+
+    def test_tagset_override_is_used_verbatim(self, write_config, dummy_files):
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=index_toml(
+                name="SigLIP_hnsw",
+                index_type="zarr",
+                embeddings_file=dummy_files["embeddings_file"],
+                tagset="SigLIP",
+            ),
+        )
+        path = write_config(collection)
+
+        config = ConfigManager(str(path)).load_config()
+
+        index = config.collection_configs["testcol"].indexes[0]
+        assert index.tagset_name == "SigLIP"
+
+    def test_two_indexes_can_share_the_same_tagset(self, write_config, dummy_files):
+        indexes = "\n".join(
+            [
+                index_toml(
+                    name="SigLIP_hnsw",
+                    index_type="faiss",
+                    embeddings_file=dummy_files["embeddings_file"],
+                    index_file=dummy_files["index_file"],
+                    tagset="SigLIP",
+                    default=True,
+                ),
+                index_toml(
+                    name="SigLIP_zarr",
+                    index_type="zarr",
+                    embeddings_file=dummy_files["embeddings_file"],
+                    tagset="SigLIP",
+                ),
+            ]
+        )
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=indexes,
+        )
+        path = write_config(collection)
+
+        config = ConfigManager(str(path)).load_config()
+
+        collection_config = config.collection_configs["testcol"]
+        assert collection_config.get_index("SigLIP_hnsw").tagset_name == "SigLIP"
+        assert collection_config.get_index("SigLIP_zarr").tagset_name == "SigLIP"
+
+
+class TestCollectionConfigIndexResolution:
+    """get_index / resolve_index / resolve_index_for_embedding_type.
+
+    Used by the search endpoints: /clip and /text resolve by family
+    (resolve_index_for_embedding_type), /rf resolves by explicit name or
+    falls back to the collection's overall default (resolve_index).
+    """
+
+    def _collection(self, write_config, dummy_files):
+        indexes = "\n".join(
+            [
+                index_toml(
+                    name="clip_idx",
+                    index_type="zarr",
+                    embeddings_file=dummy_files["embeddings_file"],
+                    model_name="model-one",
+                    default=True,
+                ),
+                index_toml(
+                    name="text_idx",
+                    index_type="zarr",
+                    embeddings_file=dummy_files["embeddings_file"],
+                    embedding_type="Text",
+                    model_name="model-two",
+                ),
+            ]
+        )
+        collection = collection_toml(
+            name="testcol",
+            database_file=dummy_files["database_file"],
+            thumbnail_media_url="https://localhost:5000/testcol",
+            original_media_url="https://localhost:5000/testcol",
+            indexes=indexes,
+        )
+        path = write_config(collection)
+        return ConfigManager(str(path)).load_config().collection_configs["testcol"]
+
+    def test_get_index_looks_up_by_name(self, write_config, dummy_files):
+        collection = self._collection(write_config, dummy_files)
+        assert collection.get_index("text_idx").name == "text_idx"
+
+    def test_get_index_raises_for_unknown_name(self, write_config, dummy_files):
+        collection = self._collection(write_config, dummy_files)
+        with pytest.raises(ValueError):
+            collection.get_index("does-not-exist")
+
+    def test_resolve_index_with_no_name_returns_the_default(
+        self, write_config, dummy_files
+    ):
+        collection = self._collection(write_config, dummy_files)
+        assert collection.resolve_index() is collection.default_index
+
+    def test_resolve_index_with_explicit_name_ignores_default(
+        self, write_config, dummy_files
+    ):
+        collection = self._collection(write_config, dummy_files)
+        assert collection.resolve_index("text_idx").name == "text_idx"
+
+    def test_resolve_index_for_embedding_type_prefers_the_default_when_it_matches(
+        self, write_config, dummy_files
+    ):
+        collection = self._collection(write_config, dummy_files)
+        assert collection.resolve_index_for_embedding_type("CLIP") is (
+            collection.default_index
+        )
+
+    def test_resolve_index_for_embedding_type_falls_back_when_default_is_other_family(
+        self, write_config, dummy_files
+    ):
+        collection = self._collection(write_config, dummy_files)
+        # The collection's overall default is clip_idx (CLIP), so resolving
+        # for "Text" must fall back to the only Text-type index instead.
+        assert collection.resolve_index_for_embedding_type("Text").name == "text_idx"
+
+    def test_resolve_index_for_embedding_type_raises_when_no_index_matches(
+        self, write_config, dummy_files
+    ):
+        collection = self._collection(write_config, dummy_files)
+        with pytest.raises(ValueError):
+            collection.resolve_index_for_embedding_type("CBIR")
 
 
 class TestErrorHandling:

@@ -28,12 +28,12 @@ from typing import List
 
 from app.repositories.database_repository import DatabaseRepository
 
-from .base import FacetedSearchStrategy
+from .base import FacetedSearchStrategyABC
 from ..schemas import ActiveFilters
 from ..core.exceptions import SearchError
 
 
-class FacetedSearchStrategy(FacetedSearchStrategy):
+class FacetedSearchStrategy(FacetedSearchStrategyABC):
     """
     Search strategy using faceted filters.
     """

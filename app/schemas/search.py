@@ -38,6 +38,7 @@ class TextSearchRequest(BaseModel):
         filters: Optional active filters to apply
         excluded: Optional list of item IDs to exclude from results
         session_info: Session context information
+        index_name: Optional index to search against
     """
 
     text: str
@@ -58,6 +59,11 @@ class TextSearchRequest(BaseModel):
     session_info: SessionInfo
     """Session context (session ID, collection, model ID)."""
 
+    index_name: Optional[str] = None
+    """Which of the collection's indexes to search; must be of this
+    endpoint's embedding_type (CLIP for /clip, Text for /text). Omitted,
+    it falls back to the family's resolved default index."""
+
 
 class RFSearchRequest(BaseModel):
     """Request model for Relevance Feedback (RF) search operations.
@@ -71,6 +77,7 @@ class RFSearchRequest(BaseModel):
         filters: Optional active filters to apply
         excluded: List of item IDs to exclude from results
         session_info: Session context information
+        index_name: Optional index to run relevance feedback against
     """
 
     pos: list[int]
@@ -96,6 +103,12 @@ class RFSearchRequest(BaseModel):
 
     session_info: SessionInfo
     """Session context (session ID, collection, model ID)."""
+
+    index_name: Optional[str] = None
+    """Which of the collection's indexes to run relevance feedback against.
+    Unlike /clip and /text (implicitly scoped to their own model manager),
+    RF isn't tied to one family, so it's named explicitly here; omitted,
+    it falls back to the collection's overall default index."""
 
 
 class FacetedSearchRequest(BaseModel):

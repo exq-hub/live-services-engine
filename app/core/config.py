@@ -83,9 +83,9 @@ class IndexConfig(BaseModel):
     name: str = Field(
         ...,
         description=(
-            "Identifies this index within its collection. Also used as the "
-            "DB id-tag namespace (e.g. a name of 'CLIP' resolves to a "
-            "'CLIP Index ID' tagset)."
+            "Identifies this index within its collection. Also the default "
+            "DB id-tag namespace, as '<name> Index ID', unless overridden "
+            "by `tagset`."
         ),
     )
     index_type: str = Field(..., description="Index backend: 'faiss' or 'zarr'")
@@ -96,6 +96,56 @@ class IndexConfig(BaseModel):
     embeddings_file: str = Field(
         ..., description="Path to Zarr embeddings file (always required)"
     )
+    model_name: str = Field(
+        "ViT-SO400M-14-SigLIP-384",
+        description="Embedding model that produced this index's vectors.",
+    )
+    embedding_type: str = Field(
+        "CLIP",
+        description=(
+            "Which embedding family model_name belongs to, e.g. 'CLIP' or "
+            "'Text'. Determines which model manager and search strategy can "
+            "serve this index -- deliberately independent of the specific "
+            "library used to load model_name."
+        ),
+    )
+    source_type: str = Field(
+        "Image",
+        description=(
+            "Which kind of media this index's positions correspond to: "
+            "'Image', 'Video', 'Audio', 'Text', or 'Other'. Matches a row in "
+            "the database's source_types table, and picks both which medias "
+            "this index maps ('Text' for an index over transcripts, "
+            "'Image' for one over keyframes) and the tagset's expected "
+            "source_type."
+        ),
+    )
+    tagset: Optional[str] = Field(
+        None,
+        description=(
+            "DB tagset this index's id mapping is read from, used verbatim. "
+            "Defaults to '<name> Index ID' when unset. Override when several "
+            "indexes share one underlying id space -- e.g. the same "
+            "embeddings built as uncompressed zarr, HNSW, and HNSW+PQ -- so "
+            "they all read the same tagset instead of each needing (and "
+            "duplicating) their own."
+        ),
+    )
+    default: bool = Field(
+        False,
+        description=(
+            "Marks this as the index used when a request doesn't specify one. "
+            "Required (exactly one) when a collection has multiple indexes; "
+            "implied when a collection has only one."
+        ),
+    )
+
+    @property
+    def tagset_name(self) -> str:
+        """The DB tagset this index's id mapping is read from."""
+        if self.tagset is not None:
+            return self.tagset
+        return f"{self.name} Index ID"
 
     @field_validator("index_file")
     @classmethod
@@ -119,6 +169,29 @@ class IndexConfig(BaseModel):
             raise ValueError(f"Embeddings file does not exist: {v}")
         return v
 
+    @field_validator("embedding_type")
+    @classmethod
+    def validate_embedding_type(cls, v: str) -> str:
+        # Only families with an actual model manager/strategy today. Extend
+        # as they're built (e.g. 'CBIR'/'SIFT' for hand-crafted features).
+        valid_types = {"CLIP", "Text"}
+        if v not in valid_types:
+            raise ValueError(
+                f"Invalid embedding_type: {v!r}. Must be one of {sorted(valid_types)}"
+            )
+        return v
+
+    @field_validator("source_type")
+    @classmethod
+    def validate_source_type(cls, v: str) -> str:
+        # Matches the database's source_types table default rows.
+        valid_source_types = {"Image", "Video", "Audio", "Text", "Other"}
+        if v not in valid_source_types:
+            raise ValueError(
+                f"Invalid source_type: {v!r}. Must be one of {sorted(valid_source_types)}"
+            )
+        return v
+
 
 class CollectionConfig(BaseModel):
     """Configuration for a single collection."""
@@ -128,6 +201,15 @@ class CollectionConfig(BaseModel):
     original_media_url: str = Field(..., description="Base URL for original media")
     indexes: List[IndexConfig] = Field(
         ..., min_length=1, description="Indexes available for this collection"
+    )
+    preload_all_indexes: bool = Field(
+        False,
+        description=(
+            "If true, eagerly load every index (model, embeddings, ANN "
+            "structure) for this collection at startup. If false, only "
+            "the default index loads eagerly; the rest load lazily on "
+            "first use."
+        ),
     )
 
     # Optional: Logging
@@ -149,6 +231,54 @@ class CollectionConfig(BaseModel):
         if len(names) != len(set(names)):
             raise ValueError("Index names must be unique within a collection")
         return v
+
+    @field_validator("indexes")
+    @classmethod
+    def validate_default_index(cls, v: List[IndexConfig]) -> List[IndexConfig]:
+        if len(v) > 1:
+            defaults = [index for index in v if index.default]
+            if len(defaults) != 1:
+                raise ValueError(
+                    "Exactly one index must be marked default when a collection "
+                    f"has multiple indexes (found {len(defaults)})"
+                )
+        return v
+
+    @property
+    def default_index(self) -> IndexConfig:
+        """The index used when a request doesn't specify one explicitly."""
+        if len(self.indexes) == 1:
+            return self.indexes[0]
+        return next(index for index in self.indexes if index.default)
+
+    def get_index(self, name: str) -> IndexConfig:
+        """Look up an index by name."""
+        for index in self.indexes:
+            if index.name == name:
+                return index
+        raise ValueError(f"No index named {name!r} configured for this collection")
+
+    def resolve_index(self, index_name: Optional[str] = None) -> IndexConfig:
+        """Resolve an index by explicit name, or the collection's default index."""
+        if index_name is not None:
+            return self.get_index(index_name)
+        return self.default_index
+
+    def resolve_index_for_embedding_type(self, embedding_type: str) -> IndexConfig:
+        """Resolve the index for a family-scoped endpoint (e.g. /clip, /text).
+
+        Prefers the collection's overall default index when it belongs to
+        `embedding_type`; otherwise falls back to the first configured
+        index of that type. Raises if the collection has none.
+        """
+        matching = [i for i in self.indexes if i.embedding_type == embedding_type]
+        if not matching:
+            raise ValueError(
+                f"No {embedding_type!r}-type index configured for this collection"
+            )
+        if self.default_index.embedding_type == embedding_type:
+            return self.default_index
+        return matching[0]
 
 
 class LSEConfig(BaseModel):
@@ -224,21 +354,34 @@ class ConfigManager:
             if not collection_data.get("enabled", False):
                 continue
 
-            indexes = [
-                IndexConfig(
-                    name=index_data["name"],
-                    index_type=index_data["index_type"],
-                    index_file=index_data.get("index_file"),
-                    embeddings_file=index_data["embeddings_file"],
-                )
-                for index_data in collection_data.get("indexes", [])
-            ]
+            indexes = []
+            for index_data in collection_data.get("indexes", []):
+                index_kwargs = {
+                    "name": index_data["name"],
+                    "index_type": index_data["index_type"],
+                    "index_file": index_data.get("index_file"),
+                    "embeddings_file": index_data["embeddings_file"],
+                    "default": index_data.get("default", False),
+                }
+                # Only pass model_name/embedding_type/source_type when set,
+                # so the IndexConfig field defaults apply rather than being
+                # overridden with None.
+                if "model_name" in index_data:
+                    index_kwargs["model_name"] = index_data["model_name"]
+                if "embedding_type" in index_data:
+                    index_kwargs["embedding_type"] = index_data["embedding_type"]
+                if "source_type" in index_data:
+                    index_kwargs["source_type"] = index_data["source_type"]
+                if "tagset" in index_data:
+                    index_kwargs["tagset"] = index_data["tagset"]
+                indexes.append(IndexConfig(**index_kwargs))
 
             collection_configs[collection_data["name"]] = CollectionConfig(
                 database_file=collection_data["database_file"],
                 thumbnail_media_url=collection_data["thumbnail_media_url"],
                 original_media_url=collection_data["original_media_url"],
                 log_directory=collection_data.get("log_directory", "./logs/"),
+                preload_all_indexes=collection_data.get("preload_all_indexes", False),
                 indexes=indexes,
             )
 

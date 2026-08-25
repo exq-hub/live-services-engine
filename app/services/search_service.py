@@ -17,10 +17,12 @@
 """Search service -- strategy dispatcher and performance tracker.
 
 `SearchService` is the entry point for all search operations. It initialises
-the three available strategies at construction time and dispatches incoming
+the available strategies at construction time and dispatches incoming
 requests to the correct one:
 
 - ``"clip"`` -- `CLIPSearchStrategy` for text-to-image similarity search.
+- ``"text"`` -- `TextEmbeddingSearchStrategy` for text-to-item search over
+  a sentence-transformers embedding space (e.g. transcripts).
 - ``"rf"`` -- `RFSearchStrategy` for SVM-based relevance feedback.
 - ``"faceted"`` -- `FacetedSearchStrategy` for filter-only retrieval.
 
@@ -34,11 +36,12 @@ from typing import Dict, List
 
 from ..strategies.base import (
     SearchStrategy,
-    TextSearchStrategy,
-    RFSearchStrategy,
-    FacetedSearchStrategy,
+    TextSearchStrategyABC,
+    RFSearchStrategyABC,
+    FacetedSearchStrategyABC,
 )
 from ..strategies.clip_search import CLIPSearchStrategy
+from ..strategies.text_search import TextEmbeddingSearchStrategy
 from ..strategies.rf_search import RFSearchStrategy as RFSearchImpl
 from ..strategies.faceted_search import FacetedSearchStrategy as FacetedSearchImpl
 from ..schemas import FacetedSearchRequest, TextSearchRequest, RFSearchRequest
@@ -48,9 +51,18 @@ from ..core.exceptions import SearchError
 class SearchService:
     """Service for managing different search strategies."""
 
-    def __init__(self, model_manager, index_repository, metadata_repository):
-        self.model_manager = model_manager
-        """Shared `ModelManager` providing the CLIP text encoder and device."""
+    def __init__(
+        self,
+        clip_model_manager,
+        text_model_manager,
+        index_repository,
+        metadata_repository,
+    ):
+        self.clip_model_manager = clip_model_manager
+        """Shared `CLIPModelManager` providing text encoders/tokenizers and the device."""
+
+        self.text_model_manager = text_model_manager
+        """Shared `TextModelManager` providing sentence-transformers encoders and the device."""
 
         self.index_repo = index_repository
         """Shared `IndexRepository` for vector nearest-neighbour lookups."""
@@ -60,12 +72,20 @@ class SearchService:
 
         self.strategies: Dict[str, SearchStrategy] = {
             "clip": CLIPSearchStrategy(
-                model_manager, index_repository, metadata_repository
+                clip_model_manager, index_repository, metadata_repository
             ),
-            "rf": RFSearchImpl(model_manager, index_repository, metadata_repository),
+            "text": TextEmbeddingSearchStrategy(
+                text_model_manager, index_repository, metadata_repository
+            ),
+            "rf": RFSearchImpl(
+                clip_model_manager,
+                text_model_manager,
+                index_repository,
+                metadata_repository,
+            ),
             "faceted": FacetedSearchImpl(metadata_repository),
         }
-        """Registry of available search strategies keyed by name (``clip``, ``rf``, ``faceted``)."""
+        """Registry of available search strategies keyed by name (``clip``, ``text``, ``rf``, ``faceted``)."""
 
     async def search_text(self, strategy_name: str, request: TextSearchRequest) -> Dict:
         """Execute text-based search using specified strategy."""
@@ -73,7 +93,7 @@ class SearchService:
             raise SearchError(f"Unknown search strategy: {strategy_name}")
 
         strategy = self.strategies[strategy_name]
-        if not isinstance(strategy, TextSearchStrategy):
+        if not isinstance(strategy, TextSearchStrategyABC):
             raise SearchError(f"Strategy {strategy_name} does not support text search")
 
         start_time = int(time.time())
@@ -86,6 +106,7 @@ class SearchService:
                 seen=request.seen or [],
                 excluded=request.excluded or [],
                 filters=request.filters,
+                index_name=request.index_name,
             )
 
             completion_time = int(time.time()) - start_time
@@ -110,7 +131,7 @@ class SearchService:
     async def search_rf(self, request: RFSearchRequest) -> Dict:
         """Execute relevance feedback search."""
         strategy = self.strategies["rf"]
-        if not isinstance(strategy, RFSearchStrategy):
+        if not isinstance(strategy, RFSearchStrategyABC):
             raise SearchError("RF strategy not properly configured")
 
         start_time = int(time.time())
@@ -125,6 +146,7 @@ class SearchService:
                 excluded=request.excluded,
                 filters=request.filters,
                 query=request.query,
+                index_name=request.index_name,
             )
 
             completion_time = int(time.time()) - start_time
@@ -149,7 +171,7 @@ class SearchService:
     async def search_faceted(self, request: FacetedSearchRequest) -> Dict:
         """Execute faceted search"""
         strategy = self.strategies["faceted"]
-        if not isinstance(strategy, FacetedSearchStrategy):
+        if not isinstance(strategy, FacetedSearchStrategyABC):
             raise SearchError("Faceted strategy not properly configured")
 
         start_time = int(time.time())

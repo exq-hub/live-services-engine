@@ -25,10 +25,11 @@ The dependency graph is::
 
     get_container
     ├── get_config_manager
-    ├── get_model_manager
+    ├── get_clip_model_manager
+    ├── get_text_model_manager
     ├── get_database_repository
     └── get_index_repository
-        ├── get_search_service  (model_manager + index_repo + database_repo)
+        ├── get_search_service  (clip_model_manager + text_model_manager + index_repo + database_repo)
         └── get_item_service    (database_repo + config_manager)
 """
 
@@ -38,10 +39,10 @@ from app.core.config import ConfigManager
 from app.repositories.database_repository import DatabaseRepository
 from app.repositories.index_repository import IndexRepository
 
-from ..core.models import ApplicationContainer, ModelManager, container
+from ..core.models import ApplicationContainer, CLIPModelManager, TextModelManager, container
 from ..services.search_service import SearchService
 from ..services.item_service import ItemService
-from ..services.logging_service import LoggingService, AuditLogger
+from ..services.logging_service import LoggingService
 
 
 def get_container() -> ApplicationContainer:
@@ -56,11 +57,18 @@ def get_config_manager(
     return app_container.config_manager
 
 
-def get_model_manager(
+def get_clip_model_manager(
     app_container: ApplicationContainer = Depends(get_container),
-) -> ModelManager:
-    """Get the model manager."""
-    return app_container.model_manager
+) -> CLIPModelManager:
+    """Get the CLIP model manager."""
+    return app_container.clip_model_manager
+
+
+def get_text_model_manager(
+    app_container: ApplicationContainer = Depends(get_container),
+) -> TextModelManager:
+    """Get the text-embedding model manager."""
+    return app_container.text_model_manager
 
 
 def get_database_repository(
@@ -78,12 +86,15 @@ def get_index_repository(
 
 
 def get_search_service(
-    model_manager: ModelManager = Depends(get_model_manager),
+    clip_model_manager: CLIPModelManager = Depends(get_clip_model_manager),
+    text_model_manager: TextModelManager = Depends(get_text_model_manager),
     index_repo: IndexRepository = Depends(get_index_repository),
     database_repo: DatabaseRepository = Depends(get_database_repository),
 ) -> SearchService:
     """Get the search service."""
-    return SearchService(model_manager, index_repo, database_repo)
+    return SearchService(
+        clip_model_manager, text_model_manager, index_repo, database_repo
+    )
 
 
 def get_item_service(

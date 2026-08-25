@@ -78,7 +78,7 @@ class SearchStrategy(ABC):
         pass
 
 
-class TextSearchStrategy(SearchStrategy):
+class TextSearchStrategyABC(SearchStrategy):
     """Abstract base class for text query-based search strategies.
 
     This class specializes the SearchStrategy interface for strategies
@@ -94,6 +94,7 @@ class TextSearchStrategy(SearchStrategy):
         seen: List[int],
         excluded: List[int],
         filters: Optional[ActiveFilters] = None,
+        index_name: Optional[str] = None,
     ) -> List[int]:
         """Execute a text-based search and return matching item indices.
 
@@ -104,6 +105,9 @@ class TextSearchStrategy(SearchStrategy):
             seen: List of item IDs that have already been seen
             excluded: List of item IDs to exclude from results
             filters: Optional filters to apply to the search
+            index_name: Which of the collection's indexes (of this
+                strategy's embedding_type) to search; defaults to the
+                family's resolved default index
 
         Returns:
             List of item indices matching the text query
@@ -111,7 +115,7 @@ class TextSearchStrategy(SearchStrategy):
         pass
 
 
-class RFSearchStrategy(SearchStrategy):
+class RFSearchStrategyABC(SearchStrategy):
     """Abstract base class for relevance feedback search strategies.
 
     This class specializes the SearchStrategy interface for strategies
@@ -130,6 +134,7 @@ class RFSearchStrategy(SearchStrategy):
         excluded: List[int],
         filters: Optional[ActiveFilters] = None,
         query: Optional[str] = None,
+        index_name: Optional[str] = None,
     ) -> List[int]:
         """Execute a relevance feedback search and return matching item indices.
 
@@ -142,6 +147,8 @@ class RFSearchStrategy(SearchStrategy):
             excluded: List of item IDs to exclude from results
             filters: Optional filters to apply to the search
             query: Optional text query to combine with feedback
+            index_name: Which index to run relevance feedback against;
+                defaults to the collection's overall default index
 
         Returns:
             List of item indices matching the relevance feedback criteria
@@ -149,7 +156,7 @@ class RFSearchStrategy(SearchStrategy):
         pass
 
 
-class FacetedSearchStrategy(SearchStrategy):
+class FacetedSearchStrategyABC(SearchStrategy):
     """Abstract base class for faceted search strategies.
 
     This class specializes the SearchStrategy interface for strategies

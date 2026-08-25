@@ -16,10 +16,14 @@
 
 """Search endpoint route handlers.
 
-Defines three POST endpoints under ``/exq/search/``:
+Defines four POST endpoints under ``/exq/search/``:
 
 - ``/clip`` -- CLIP text-to-image similarity search.
-- ``/rf`` -- relevance-feedback search (SVM-based).
+- ``/text`` -- text-embedding search (sentence-transformers) over
+  non-CLIP indexes, e.g. searching transcripts by meaning.
+- ``/rf`` -- relevance-feedback search (SVM-based); targets whichever
+  index ``RFSearchRequest.index_name`` names, or the collection's
+  default when omitted.
 - ``/faceted`` -- filter-only search with no vector similarity.
 
 Each endpoint validates the incoming Pydantic request, delegates to
@@ -59,6 +63,47 @@ async def clip_search(
             request.session_info.collection,
             {
                 "query": request.text,
+                "index_name": request.index_name,
+                "n_seen": len(request.seen or []),
+                "filters": request.filters.model_dump_json()
+                if request.filters
+                else None,
+                "excluded": request.excluded or [],
+                "n_requested": request.n,
+            },
+            result["suggestions"],
+            result["request_timestamp"],
+            result["completion_time"],
+        )
+
+        return {"suggestions": result["suggestions"]}
+
+    except SearchError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.post("/text")
+async def text_search(
+    request: TextSearchRequest,
+    background_tasks: BackgroundTasks,
+    search_service: SearchService = Depends(get_search_service),
+    logging_service: LoggingService = Depends(get_logging_service),
+) -> Dict[str, Any]:
+    """Search using sentence-transformers text embeddings."""
+    try:
+        result = await search_service.search_text("text", request)
+
+        background_tasks.add_task(
+            logging_service.log_search_request,
+            "Text Search",
+            request.session_info.session,
+            request.session_info.modelId,
+            request.session_info.collection,
+            {
+                "query": request.text,
+                "index_name": request.index_name,
                 "n_seen": len(request.seen or []),
                 "filters": request.filters.model_dump_json()
                 if request.filters
@@ -99,6 +144,7 @@ async def rf_search(
             {
                 "pos": request.pos,
                 "neg": request.neg,
+                "index_name": request.index_name,
                 "n_seen": len(request.seen),
                 "filters": request.filters.model_dump_json()
                 if request.filters

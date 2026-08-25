@@ -49,8 +49,17 @@ def index_toml(
     index_type: str,
     embeddings_file: str,
     index_file: Optional[str] = None,
+    model_name: Optional[str] = None,
+    embedding_type: Optional[str] = None,
+    source_type: Optional[str] = None,
+    tagset: Optional[str] = None,
+    default: Optional[bool] = None,
 ) -> str:
-    """Render a `[[collections.indexes]]` table."""
+    """Render a `[[collections.indexes]]` table.
+
+    `model_name`, `embedding_type`, `source_type`, `tagset`, and `default`
+    are omitted unless given, exercising the schema's own defaults.
+    """
     lines = [
         "  [[collections.indexes]]",
         f'  name = "{name}"',
@@ -59,6 +68,16 @@ def index_toml(
     if index_file is not None:
         lines.append(f'  index_file = "{index_file}"')
     lines.append(f'  embeddings_file = "{embeddings_file}"')
+    if model_name is not None:
+        lines.append(f'  model_name = "{model_name}"')
+    if embedding_type is not None:
+        lines.append(f'  embedding_type = "{embedding_type}"')
+    if source_type is not None:
+        lines.append(f'  source_type = "{source_type}"')
+    if tagset is not None:
+        lines.append(f'  tagset = "{tagset}"')
+    if default is not None:
+        lines.append(f"  default = {str(default).lower()}")
     return "\n".join(lines)
 
 
@@ -70,8 +89,13 @@ def collection_toml(
     indexes: str,
     enabled: bool = True,
     log_directory: Optional[str] = None,
+    preload_all_indexes: Optional[bool] = None,
 ) -> str:
-    """Render a `[[collections]]` table, with one or more nested index tables."""
+    """Render a `[[collections]]` table, with one or more nested index tables.
+
+    `preload_all_indexes` is omitted unless given, exercising the
+    schema's own default (eager-load only the default index).
+    """
     lines = [
         "[[collections]]",
         f'name = "{name}"',
@@ -82,6 +106,8 @@ def collection_toml(
     ]
     if log_directory is not None:
         lines.append(f'log_directory = "{log_directory}"')
+    if preload_all_indexes is not None:
+        lines.append(f"preload_all_indexes = {str(preload_all_indexes).lower()}")
     lines.append("")
     lines.append(indexes)
     return "\n".join(lines)
