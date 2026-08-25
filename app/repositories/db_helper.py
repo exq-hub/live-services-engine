@@ -59,7 +59,7 @@ def compile_active_filters(
 ) -> Tuple[str, List[Any]]:
     """
     Args:
-        active: selected filters rrepresented as an ActiveFiltersDB instance (dict) with shape {"root": FilterExpr}
+        active: selected filters represented as an ActiveFiltersDB instance (dict) with shape {"root": FilterExpr}
     Returns (sql, params) for querying media_ids matching the filter expression
     """
 

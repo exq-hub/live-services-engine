@@ -36,7 +36,7 @@ It provides a uniform interface for:
 
 from collections.abc import Set
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import zarr
@@ -158,7 +158,7 @@ class IndexRepository:
         skip_ids: Set[int] = frozenset(),
         index_name: Optional[str] = None,
         # , q_id: int = -1, resume: bool = False
-    ) -> Tuple[int, np.ndarray]:
+    ) -> Tuple[List[int], List[float]]:
         """Search the ANN index for collection/index_name."""
         index = self.get_index(collection, index_name)
 
