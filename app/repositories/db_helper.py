@@ -89,18 +89,18 @@ def compile_active_filters(
         upper: Optional[Union[int, float, str]],
         negated: bool,
     ) -> Tuple[str, List[Any]]:
-        where_parts = [f"r.tagset_id = ?"]
+        where_parts = ["r.tagset_id = ?"]
         p: List[Any] = [filter_id]
 
         # Build the bound predicates. BETWEEN if both present, otherwise one-sided.
         if lower is not None and upper is not None:
-            where_parts.append(f"r.value BETWEEN ? AND ?")
+            where_parts.append("r.value BETWEEN ? AND ?")
             p.extend([lower, upper])
         elif lower is not None:
-            where_parts.append(f"r.value >= ?")
+            where_parts.append("r.value >= ?")
             p.append(lower)
         elif upper is not None:
-            where_parts.append(f"r.value <= ?")
+            where_parts.append("r.value <= ?")
             p.append(upper)
         else:
             # No bounds means "any value in this set"; keep just the set_id check.

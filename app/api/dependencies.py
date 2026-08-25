@@ -42,7 +42,7 @@ from app.repositories.index_repository import IndexRepository
 from ..core.models import ApplicationContainer, CLIPModelManager, TextModelManager, container
 from ..services.search_service import SearchService
 from ..services.item_service import ItemService
-from ..services.logging_service import LoggingService, AuditLogger
+from ..services.logging_service import LoggingService
 
 
 def get_container() -> ApplicationContainer:

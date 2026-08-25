@@ -614,7 +614,7 @@ class DatabaseRepository:
                 cursor.execute("CREATE TEMPORARY TABLE temp_passed_gid (id INTEGER PRIMARY KEY)")
                 cursor.executemany("INSERT INTO temp_passed_gid (id) VALUES (?)", [(gid,) for gid in group_ids])
                 group_medias = cursor.execute(
-                    f"""
+                    """
                     SELECT id
                     FROM medias m
                     WHERE m.group_id IN (SELECT media_id FROM temp_passed_gid)
