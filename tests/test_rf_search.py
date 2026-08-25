@@ -24,6 +24,7 @@ index's embedding_type -- not a re-resolved one, so it can't drift to a
 different same-family index.
 """
 
+import asyncio
 from unittest.mock import MagicMock
 
 import pytest
@@ -115,3 +116,44 @@ class TestResolveIndex:
         )
         with pytest.raises(ValueError):
             strategy._resolve_index("testcol", "does-not-exist")
+
+
+class TestRandomFallbackSamples:
+    """Random pos/neg fallback samples are already index positions, not
+    media IDs, so they must bypass get_index_ids (which expects the
+    latter) -- unlike explicitly-provided pos/neg, which are media IDs
+    and do need that conversion.
+    """
+
+    def _strategy_with_index(self, write_config, dummy_files):
+        return _make_strategy(
+            write_config,
+            dummy_files,
+            index_toml(
+                name="idx", index_type="zarr", embeddings_file=dummy_files["embeddings_file"]
+            ),
+        )
+
+    def test_negative_fallback_skips_get_index_ids(self, write_config, dummy_files):
+        strategy = self._strategy_with_index(write_config, dummy_files)
+
+        result = strategy._prepare_negative_samples("testcol", "idx", [], total_items=10)
+
+        strategy.database_repo.get_index_ids.assert_not_called()
+        assert len(result) == 5
+        assert all(0 <= v < 10 for v in result)
+
+    def test_positive_fallback_skips_get_index_ids(self, write_config, dummy_files):
+        strategy = self._strategy_with_index(write_config, dummy_files)
+        strategy.database_repo.get_total_items.return_value = 10
+        index_config = strategy.config.collection_configs["testcol"].get_index("idx")
+
+        result = asyncio.run(
+            strategy._prepare_positive_samples(
+                "testcol", index_config, [], None, [], [], None
+            )
+        )
+
+        strategy.database_repo.get_index_ids.assert_not_called()
+        assert len(result) == 5
+        assert all(0 <= v < 10 for v in result)

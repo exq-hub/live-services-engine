@@ -213,11 +213,13 @@ class RFSearchStrategy(VectorSearchMixin, RFSearchStrategyABC):
                 # If pseudo RF fails, continue with just the provided positive samples
                 pass
 
-        # If no positive samples and no query, add random samples
+        # If no positive samples and no query, fall back to random index
+        # positions directly -- these aren't media IDs, so they don't go
+        # through get_index_ids like pos/pseudo_rf above.
         if not positive_samples and query is None:
             rng = default_rng()
             total_items = self.database_repo.get_total_items(collection, index_config.name)
-            positive_samples = rng.choice(total_items, size=5, replace=False).tolist()
+            return np.asarray(rng.choice(total_items, size=5, replace=False).tolist())
 
         positive_samples = self.database_repo.get_index_ids(
             collection, positive_samples, index_config.name
@@ -233,11 +235,7 @@ class RFSearchStrategy(VectorSearchMixin, RFSearchStrategyABC):
             neg = self.database_repo.get_index_ids(collection, neg, index_name)
             return np.asarray(neg)
         else:
-            # Add random negative samples if none provided
+            # Add random negative index positions if none provided -- these
+            # aren't media IDs, so no get_index_ids conversion is needed.
             rng = default_rng()
-            neg = self.database_repo.get_index_ids(
-                collection,
-                rng.choice(total_items, size=5, replace=False).tolist(),
-                index_name,
-            )
-            return np.asarray(neg)
+            return np.asarray(rng.choice(total_items, size=5, replace=False).tolist())
