@@ -140,6 +140,11 @@ def mocked_clip_loading(monkeypatch):
         "app.core.models.open_clip.get_tokenizer", lambda name: MagicMock()
     )
     monkeypatch.setattr("app.core.models.torch.save", lambda *a, **kw: None)
+    # Force the cache-miss branch of _load_text_encoder regardless of what's
+    # actually on disk in the repo's real ./data/ dir (e.g. a previously
+    # cached default model) -- otherwise a real cache hit silently bypasses
+    # create_model, and the corresponding model_name never lands here.
+    monkeypatch.setattr("pathlib.Path.exists", lambda self: False)
     return create_model_calls
 
 
