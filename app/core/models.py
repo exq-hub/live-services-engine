@@ -41,6 +41,7 @@ application (imported by route dependencies, the lifespan handler, etc.).
 """
 
 import logging
+import threading
 import time
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -130,6 +131,9 @@ class ModelManager(ABC):
         self._text_encoders: Dict[str, Any] = {}
         """Loaded text encoders keyed by `model_name`."""
 
+        self._load_lock = threading.Lock()
+        """Lock to synchronize loading of text encoder"""
+
     @property
     def device(self) -> torch.device:
         """Get the configured device."""
@@ -139,10 +143,14 @@ class ModelManager(ABC):
 
     def get_text_encoder(self, model_name: str) -> Any:
         """Get the text encoder for `model_name`, loading it on demand if not already cached."""
-        if model_name not in self._text_encoders:
-            logger.info(f"Loading {self.embedding_type} model: {model_name}")
-            self._text_encoders[model_name] = self._load_text_encoder(model_name)
-            self._after_load_text_encoder(model_name)
+        if model_name in self._text_encoders:
+            return self._text_encoders[model_name]
+        with self._load_lock:
+            if model_name not in self._text_encoders: # Extra check in case another thread loaded it while waiting
+                logger.info(f"Loading {self.embedding_type} model: {model_name}")
+                text_encoder = self._load_text_encoder(model_name)
+                self._after_load_text_encoder(model_name)
+                self._text_encoders[model_name] = text_encoder
         return self._text_encoders[model_name]
 
     def initialize_models(self) -> None:
