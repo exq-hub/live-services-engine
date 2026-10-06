@@ -107,15 +107,13 @@ def compile_active_filters(
             pass
 
         sub = f"""
-            EXISTS (
-                SELECT 1
+            tgs.media_id {"NOT IN" if negated else "IN"} (
+                SELECT x.media_id
                 FROM taggings x
                 JOIN {tagtype_map[tagtype_id]}_tags r ON r.id = x.tag_id
-                WHERE x.media_id = tgs.media_id AND {" AND ".join(where_parts)}
+                WHERE {" AND ".join(where_parts)}
             )
             """
-        if negated:
-            sub = f"NOT ({sub})"
         return sub, p
 
     def compile_leaf(leaf: FilterLeaf) -> Tuple[str, List[Any]]:
