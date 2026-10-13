@@ -576,6 +576,8 @@ class DatabaseRepository:
                 """,
                 [media_id],
             ).fetchone()
+            if media_info is None:
+                return None
             # TODO Consider renaming fields for clarity
             item["media_uri"] = media_info[0]
             item["source_type"] = media_info[1]

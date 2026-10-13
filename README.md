@@ -113,8 +113,9 @@ All endpoints are mounted under `/exq/`. We may introduce a semantic versioning 
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/exq/item/base` | Basic item info (URI, thumbnails) |
-| POST | `/exq/item/details` | Detailed metadata for selected filters |
+| POST | `/exq/item/info` | Basic item info (URI, thumbnails); pass optional `filterIds` to also get their values under `metadata` |
+| POST | `/exq/item/base` | **Deprecated** -- alias of `/exq/item/info` |
+| POST | `/exq/item/details` | **Deprecated** -- use `/exq/item/info` with `filterIds`. Fetches base info and returns only `metadata` |
 | POST | `/exq/item/related` | Related items by group |
 | POST | `/exq/item/excluded` | Check if item belongs to an excluded group |
 

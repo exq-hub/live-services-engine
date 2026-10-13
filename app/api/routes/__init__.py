@@ -27,7 +27,8 @@ search
     ``POST /exq/search/faceted`` -- search endpoints dispatching to
     `SearchService`.
 items
-    ``POST /exq/item/base``, ``POST /exq/item/details``,
+    ``POST /exq/item/info``, ``POST /exq/item/base`` (deprecated alias),
+    ``POST /exq/item/details`` (deprecated),
     ``POST /exq/item/related``, ``POST /exq/item/excluded`` -- item
     metadata and relationship endpoints dispatching to `ItemService`.
 admin

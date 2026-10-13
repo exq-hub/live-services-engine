@@ -31,21 +31,20 @@ class ItemRequest(BaseModel):
     mediaId: int
     """Unique identifier for the media item to retrieve."""
 
-    session_info: SessionInfo
-    """Session context information."""
-
-
-class ItemDetailRequest(BaseModel):
-    """Request tagset/filter values for a given media item and its group."""
-
-    mediaId: int
-    """Unique identifier for the media item to retrieve."""
-
     filterIds: list[int] = []
-    """Tagset/filter IDs whose values should be included in the response."""
+    """Optional tagset/filter IDs; when non-empty, their values are returned
+    under ``metadata``."""
 
     session_info: SessionInfo
     """Session context information."""
+
+
+class ItemDetailRequest(ItemRequest):
+    """Deprecated: use `ItemRequest` with ``filterIds`` on ``/exq/item/info``.
+
+    Kept only so the deprecated ``/exq/item/details`` endpoint keeps its
+    request model.
+    """
 
 
 class IsExcludedRequest(BaseModel):

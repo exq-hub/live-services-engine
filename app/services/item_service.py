@@ -22,8 +22,9 @@ database results with collection-specific media URLs from `ConfigManager`.
 
 Key operations:
 
-- **Base info** -- media URI, thumbnail path, source type, group ID.
-- **Detailed info** -- item metadata values for selected tagsets/filters.
+- **Base info** -- media URI, thumbnail path, source type, group ID, plus
+  metadata values for selected tagsets/filters when ``filterIds`` is given.
+- **Detailed info** -- deprecated; metadata values only, derived from base info.
 - **Related items** -- other media items sharing the same ``group_id``.
 - **Exclusion check** -- whether a given item belongs to any excluded group,
   used by the UI to grey-out or hide items during interactive search.
@@ -49,9 +50,15 @@ class ItemService:
         """Configuration manager providing collection media URLs."""
 
     def get_item_base_info(self, request: ItemRequest) -> Dict[str, Any]:
-        """Get basic information for an item."""
+        """Get basic information for an item.
+
+        If ``request.filterIds`` is non-empty, the values of those
+        tagsets/filters are included under ``metadata``.
+        """
         collection = request.session_info.collection
-        item = self.database_repo.get_item(collection, request.mediaId)
+        item = self.database_repo.get_item(
+            collection, request.mediaId, request.filterIds
+        )
 
         if not item:
             raise DatabaseError(
@@ -71,31 +78,18 @@ class ItemService:
             "groupId": item["group"],
         }
 
+        if request.filterIds:
+            result["metadata"] = item.get("metadata") or {}
+
         return result
 
     def get_item_detailed_info(self, request: ItemDetailRequest) -> Dict[str, Any]:
-        """Get detailed information for an item."""
-        collection = request.session_info.collection
-        item = {}
-        group = {}
-        item = self.database_repo.get_item(
-            collection, request.mediaId, request.filterIds
-        )
+        """Get detailed information for an item.
 
-        if not item:
-            raise DatabaseError(
-                f"Item {request.mediaId} not found in collection {collection}"
-            )
-
-        if item is None or item.get("metadata") is None:
-            return {}
-
-        # Process item metadata
-        metadata = {k: v for k, v in item["metadata"].items()}
-        # Process group metadata
-        metadata.update({k: v for k, v in group.items()})
-
-        return metadata
+        Deprecated: use `get_item_base_info` with ``filterIds``. This fetches
+        the full base info and throws everything away except ``metadata``.
+        """
+        return self.get_item_base_info(request).get("metadata", {})
 
     def get_related_items(self, request: ItemRequest) -> Dict[str, List[int]]:
         """Get related items for an item."""

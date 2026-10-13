@@ -16,10 +16,12 @@
 
 """Item metadata and relationship endpoint route handlers.
 
-Defines four POST endpoints under ``/exq/item/``:
+Defines POST endpoints under ``/exq/item/``:
 
-- ``/base`` -- basic item info (media URI, thumbnail, source type, group).
-- ``/details`` -- detailed metadata for selected tagsets/filters.
+- ``/info`` -- basic item info (media URI, thumbnail, source type, group),
+  plus ``metadata`` for selected tagsets/filters when ``filterIds`` is given.
+- ``/base`` -- deprecated alias of ``/info``.
+- ``/details`` -- deprecated; ``metadata`` only, derived from ``/info``.
 - ``/related`` -- IDs of items sharing the same ``group_id``.
 - ``/excluded`` -- check whether an item belongs to any excluded group.
 
@@ -41,14 +43,19 @@ from ..dependencies import get_item_service, get_logging_service
 router = APIRouter(prefix="/exq", tags=["items"])
 
 
-@router.post("/item/base")
+@router.post("/item/info")
+@router.post("/item/base", deprecated=True)
 async def get_item_base_info(
     request: ItemRequest,
     background_tasks: BackgroundTasks,
     item_service: ItemService = Depends(get_item_service),
     logging_service: LoggingService = Depends(get_logging_service),
 ) -> Dict[str, Any]:
-    """Get basic information for an item."""
+    """Get basic information for an item.
+
+    ``/item/base`` is a deprecated alias of ``/item/info``, kept for
+    existing clients.
+    """
     try:
         result = item_service.get_item_base_info(request)
 
@@ -71,14 +78,19 @@ async def get_item_base_info(
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
-@router.post("/item/details")
+@router.post("/item/details", deprecated=True)
 async def get_item_detailed_info(
     request: ItemDetailRequest,
     background_tasks: BackgroundTasks,
     item_service: ItemService = Depends(get_item_service),
     logging_service: LoggingService = Depends(get_logging_service),
 ) -> Dict[str, Any]:
-    """Get detailed information for an item."""
+    """Get detailed information for an item.
+
+    Deprecated: use ``/exq/item/info`` with ``filterIds``. This endpoint
+    fetches the full base info and throws everything away except
+    ``metadata``.
+    """
     try:
         result = item_service.get_item_detailed_info(request)
 
@@ -111,7 +123,9 @@ async def get_related_items(
     try:
         result = item_service.get_related_items(request)
 
-        base_info = item_service.get_item_base_info(request)
+        base_info = item_service.get_item_base_info(
+            ItemRequest(mediaId=request.mediaId, session_info=request.session_info)
+        )
 
         background_tasks.add_task(
             logging_service.log_item_request,
