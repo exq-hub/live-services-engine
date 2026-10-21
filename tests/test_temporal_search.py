@@ -30,7 +30,15 @@ import pytest
 from pydantic import ValidationError
 
 from app.core.exceptions import SearchError
-from app.schemas import QueryHop, RFHop, TemporalSearchRequest
+from app.schemas import (
+    ActiveFilters,
+    DBFilter,
+    DBValueConstraint,
+    FilterLeaf,
+    QueryHop,
+    RFHop,
+    TemporalSearchRequest,
+)
 from app.strategies.temporal_search import (
     Chain,
     HopTimeline,
@@ -349,3 +357,42 @@ class TestTemporalSearchStrategy:
     def test_no_anchors_returns_nothing(self, strategy):
         strategy._search_with_expansion = AsyncMock(return_value=[])
         assert _search(strategy, [QueryHop(kind="query", text="a")]) == []
+
+    def test_a_filter_shared_by_later_hops_is_evaluated_once(self, strategy):
+        strategy.database_repo.get_filtered_media_ids.return_value = [11, 13, 31]
+        chains = _search(
+            strategy,
+            [
+                QueryHop(kind="query", text="a"),
+                QueryHop(kind="query", text="d"),
+                QueryHop(kind="query", text="c"),
+            ],
+            filters=_tag_filter(1),
+        )
+
+        strategy.database_repo.get_filtered_media_ids.assert_called_once()
+        assert [c.items for c in chains] == [[10, 11, 13], [30, 31]]
+
+    def test_each_distinct_hop_filter_is_evaluated(self, strategy):
+        strategy.database_repo.get_filtered_media_ids.return_value = [11, 13, 31]
+        _search(
+            strategy,
+            [
+                QueryHop(kind="query", text="a"),
+                QueryHop(kind="query", text="d", filters=_tag_filter(2)),
+                QueryHop(kind="query", text="c"),
+            ],
+            filters=_tag_filter(1),
+        )
+
+        assert strategy.database_repo.get_filtered_media_ids.call_count == 2
+
+
+def _tag_filter(tag_id):
+    return ActiveFilters(
+        root=FilterLeaf(
+            filter=DBFilter(
+                id=1, tagtype_id=1, constraint=DBValueConstraint(value_ids=[tag_id])
+            )
+        )
+    )

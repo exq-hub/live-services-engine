@@ -383,13 +383,18 @@ class TemporalSearchStrategy(VectorSearchMixin, TemporalSearchStrategyABC):
 
         # Pool positions per later hop, in its own index
         pools: List[np.ndarray] = []
+        passed_by_filter: Dict[str, set] = {}
         for (index_config, _), hop_filter in zip(queries, hop_filters):
             media_ids = timeline.after(earliest_anchor, index_config.source_type)
             media_ids = [m for m in media_ids if m not in excluded_set]
             if hop_filter is not None:
-                passed = set(
-                    self.database_repo.get_filtered_media_ids(collection, hop_filter)
-                )
+                # Hops often share a filter, so each distinct one is evaluated once
+                key = hop_filter.model_dump_json()
+                if key not in passed_by_filter:
+                    passed_by_filter[key] = set(
+                        self.database_repo.get_filtered_media_ids(collection, hop_filter)
+                    )
+                passed = passed_by_filter[key]
                 media_ids = [m for m in media_ids if m in passed]
             pools.append(
                 np.asarray(
