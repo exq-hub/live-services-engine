@@ -32,6 +32,8 @@ filters
 search
     `TextSearchRequest`, `RFSearchRequest`, `FacetedSearchRequest`,
     `AggregationSearchRequest` -- search endpoint payloads.
+    `TemporalSearchRequest` with its `TemporalHop` variants and its
+    `TemporalChain` result are the temporal search payloads.
 items
     `ItemRequest`, `ItemDetailRequest`, `RelatedItemsRequest`,
     `IsExcludedRequest`, `ItemInfo`, `ClearItemSetRequest` -- item endpoint
@@ -56,6 +58,11 @@ from .search import (
     RFSearchRequest,
     FacetedSearchRequest,
     AggregationSearchRequest,
+    QueryHop,
+    RFHop,
+    TemporalHop,
+    TemporalSearchRequest,
+    TemporalChain,
 )
 from .items import (
     ItemRequest,
@@ -82,6 +89,11 @@ __all__ = [
     "RFSearchRequest",
     "FacetedSearchRequest",
     "AggregationSearchRequest",
+    "QueryHop",
+    "RFHop",
+    "TemporalHop",
+    "TemporalSearchRequest",
+    "TemporalChain",
     "ItemRequest",
     "ItemDetailRequest",
     "RelatedItemsRequest",

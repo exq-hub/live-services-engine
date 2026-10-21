@@ -35,7 +35,7 @@ sentence-transformers' `.encode()`.
 """
 
 from abc import ABC, abstractmethod
-from typing import ClassVar, List, Optional
+from typing import ClassVar, List, Optional, Tuple
 
 import numpy as np
 
@@ -171,6 +171,14 @@ class EmbeddingSearchStrategy(VectorSearchMixin, TextSearchStrategyABC, ABC):
             return index_config
         return collection_config.resolve_index_for_embedding_type(self.embedding_type)
 
+    async def build_query(
+        self, collection: str, text: str, index_name: Optional[str] = None
+    ) -> Tuple[IndexConfig, np.ndarray]:
+        """Resolve this family's index and encode text into its embedding space."""
+        index_config = self._resolve_index(collection, index_name)
+        text_features = await self._encode_text(index_config.model_name, text)
+        return index_config, text_features
+
     async def search(
         self,
         collection: str,
@@ -183,8 +191,9 @@ class EmbeddingSearchStrategy(VectorSearchMixin, TextSearchStrategyABC, ABC):
     ) -> List[int]:
         """Execute a text-to-vector search against this family's index."""
         try:
-            index_config = self._resolve_index(collection, index_name)
-            text_features = await self._encode_text(index_config.model_name, text)
+            index_config, text_features = await self.build_query(
+                collection, text, index_name
+            )
 
             excluded_set = self._build_excluded_set(collection, excluded)
             seen_set = set(seen)

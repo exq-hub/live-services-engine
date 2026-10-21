@@ -25,6 +25,8 @@ requests to the correct one:
   a sentence-transformers embedding space (e.g. transcripts).
 - ``"rf"`` -- `RFSearchStrategy` for SVM-based relevance feedback.
 - ``"faceted"`` -- `FacetedSearchStrategy` for filter-only retrieval.
+- ``"temporal"`` uses `TemporalSearchStrategy` for ordered sequences of
+  text or RF queries matched as chains of segments within a video.
 
 Each search call is timed (wall-clock seconds) and the result dict includes
 ``request_timestamp``, ``completion_time``, and ``strategy`` metadata used
@@ -39,12 +41,19 @@ from ..strategies.base import (
     TextSearchStrategyABC,
     RFSearchStrategyABC,
     FacetedSearchStrategyABC,
+    TemporalSearchStrategyABC,
 )
 from ..strategies.clip_search import CLIPSearchStrategy
 from ..strategies.text_search import TextEmbeddingSearchStrategy
 from ..strategies.rf_search import RFSearchStrategy as RFSearchImpl
 from ..strategies.faceted_search import FacetedSearchStrategy as FacetedSearchImpl
-from ..schemas import FacetedSearchRequest, TextSearchRequest, RFSearchRequest
+from ..strategies.temporal_search import TemporalSearchStrategy as TemporalSearchImpl
+from ..schemas import (
+    FacetedSearchRequest,
+    TextSearchRequest,
+    RFSearchRequest,
+    TemporalSearchRequest,
+)
 from ..core.exceptions import SearchError
 
 
@@ -85,7 +94,17 @@ class SearchService:
             ),
             "faceted": FacetedSearchImpl(metadata_repository),
         }
-        """Registry of available search strategies keyed by name (``clip``, ``text``, ``rf``, ``faceted``)."""
+        """Registry of available search strategies keyed by name (``clip``, ``text``, ``rf``, ``faceted``, ``temporal``)."""
+
+        # Temporal search resolves and encodes its hops with the strategies above
+        self.strategies["temporal"] = TemporalSearchImpl(
+            clip_model_manager.config,
+            self.strategies["clip"],
+            self.strategies["text"],
+            self.strategies["rf"],
+            index_repository,
+            metadata_repository,
+        )
 
     async def search_text(self, strategy_name: str, request: TextSearchRequest) -> Dict:
         """Execute text-based search using specified strategy."""
@@ -197,6 +216,46 @@ class SearchService:
                 {
                     "collection": request.session_info.collection,
                     "filters": request.filters,
+                },
+            )
+
+    async def search_temporal(self, request: TemporalSearchRequest) -> Dict:
+        """Execute temporal search"""
+        strategy = self.strategies["temporal"]
+        if not isinstance(strategy, TemporalSearchStrategyABC):
+            raise SearchError("Temporal strategy not properly configured")
+
+        start_time = int(time.time())
+
+        try:
+            chains = await strategy.search(
+                collection=request.session_info.collection,
+                hops=request.hops,
+                n=request.n,
+                seen=request.seen,
+                excluded=request.excluded,
+                filters=request.filters,
+                top_r=request.top_r,
+                rrf_k=request.rrf_k,
+                chains_per_video=request.chains_per_video,
+                iou_threshold=request.iou_threshold,
+            )
+
+            completion_time = int(time.time()) - start_time
+
+            return {
+                "suggestions": chains,
+                "request_timestamp": start_time,
+                "completion_time": completion_time,
+                "strategy": "temporal",
+            }
+
+        except Exception as e:
+            raise SearchError(
+                f"Temporal search failed: {e}",
+                {
+                    "collection": request.session_info.collection,
+                    "hops": len(request.hops),
                 },
             )
 

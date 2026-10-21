@@ -174,6 +174,35 @@ class TestSearchSubset:
         assert indices == [0, 1]
 
 
+class TestScoreSubset:
+    # Same fixture rows as TestSearchSubset, scored against two queries
+    # at once, [1,0,0] (first element) and [0,0,1] (last element).
+    queries = np.array([[1.0, 0.0, 0.0], [0.0, 0.0, 1.0]], dtype="f4")
+
+    def test_scores_every_query_aligned_with_sorted_ids(self, multi_index_config):
+        repo = IndexRepository(multi_index_config)
+        ids, scores = repo.score_subset("testcol", self.queries, {3, 0, 2})
+        assert ids.tolist() == [0, 2, 3]
+        assert scores.tolist() == [[0.0, 6.0, 9.0], [2.0, 8.0, 11.0]]
+
+    def test_scores_across_blocks(self, multi_index_config, monkeypatch):
+        monkeypatch.setattr(
+            "app.repositories.index_repository.SCORE_BLOCK_ROWS", 3
+        )
+        repo = IndexRepository(multi_index_config)
+        ids, scores = repo.score_subset("testcol", self.queries, {0, 1, 2, 3})
+        assert ids.tolist() == [0, 1, 2, 3]
+        assert scores.tolist() == [[0.0, 3.0, 6.0, 9.0], [2.0, 5.0, 8.0, 11.0]]
+
+    def test_empty_candidates_returns_an_empty_score_row_per_query(
+        self, multi_index_config
+    ):
+        repo = IndexRepository(multi_index_config)
+        ids, scores = repo.score_subset("testcol", self.queries, set())
+        assert ids.shape == (0,)
+        assert scores.shape == (2, 0)
+
+
 class TestClearCache:
     def test_clear_cache_for_one_collection_leaves_others_intact(
         self, write_config, dummy_files, tmp_path

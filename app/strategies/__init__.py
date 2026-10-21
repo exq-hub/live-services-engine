@@ -34,4 +34,8 @@ rf_search
 faceted_search
     `FacetedSearchStrategy` -- pure filter-based retrieval with no vector
     similarity; compiles filter expressions to SQL and returns matching IDs.
+temporal_search
+    `TemporalSearchStrategy` matches an ordered sequence of text or RF
+    hops to chains of segments in time order within a video, ranked
+    by length then RRF, with IoU-based overlap suppression per video.
 """

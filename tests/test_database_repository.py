@@ -471,3 +471,93 @@ class TestGroupMediaIdsPerCollection:
 
         assert repo._group_media_ids["testcol"] == {100}
         assert repo._group_media_ids["othercol"] == {300}
+
+
+@pytest.fixture
+def timed_db_config(multi_index_db_config):
+    """Extends the base database with segment times.
+
+    - group 100 (Image): 10 has Start 1000 and End 2000, 11 has Start 3000
+      and no End, 12 has only Keyframe 5000, 13 has no time at all.
+    - group 200 (Text): 20 has Start 1500 and End 2500.
+    - group 300 (Image): 30 has Start 0, in a group no anchor belongs to.
+    """
+    db_file = multi_index_db_config.collection_configs["testcol"].database_file
+    conn = sqlite3.connect(str(db_file))
+    conn.executescript(
+        """
+        INSERT INTO tagsets (id, name, tagtype_id) VALUES
+            (5, 'Start (ms)', 1), (6, 'Keyframe (ms)', 1), (7, 'End (ms)', 1);
+
+        INSERT INTO medias (id, source, source_type, thumbnail_uri, group_id) VALUES
+            (12, 'img3.jpg', 1, 'thumb4.jpg', 100),
+            (13, 'img4.jpg', 1, 'thumb5.jpg', 100),
+            (30, 'img5.jpg', 1, 'thumb6.jpg', 300);
+
+        INSERT INTO numerical_int_tags (id, value, tagset_id) VALUES
+            (5000, 1000, 5), (5001, 3000, 5), (5002, 1500, 5), (5003, 0, 5),
+            (6000, 5000, 6),
+            (7000, 2000, 7), (7001, 2500, 7);
+        INSERT INTO taggings (media_id, tag_id) VALUES
+            (10, 5000), (10, 7000), (11, 5001), (12, 6000),
+            (20, 5002), (20, 7001), (30, 5003);
+        """
+    )
+    conn.commit()
+    conn.close()
+    return multi_index_db_config
+
+
+class TestGetGroupSegmentTimes:
+    def test_times_every_segment_in_the_anchors_groups(self, timed_db_config):
+        repo = _load(timed_db_config)
+        rows = repo.get_group_segment_times("testcol", [10, 20], ["Image", "Text"])
+        assert sorted(rows) == [
+            (10, 100, "Image", 1000, 2000),
+            (11, 100, "Image", 3000, 3000),
+            (12, 100, "Image", 5000, 5000),
+            (20, 200, "Text", 1500, 2500),
+        ]
+
+    def test_only_returns_the_requested_source_types(self, timed_db_config):
+        repo = _load(timed_db_config)
+        rows = repo.get_group_segment_times("testcol", [10, 20], ["Text"])
+        assert [row[0] for row in rows] == [20]
+
+    def test_start_prefers_start_over_keyframe(self, timed_db_config):
+        db_file = timed_db_config.collection_configs["testcol"].database_file
+        conn = sqlite3.connect(str(db_file))
+        conn.executescript(
+            """
+            INSERT INTO numerical_int_tags (id, value, tagset_id) VALUES (6001, 9999, 6);
+            INSERT INTO taggings (media_id, tag_id) VALUES (10, 6001);
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        repo = _load(timed_db_config)
+        rows = repo.get_group_segment_times("testcol", [10], ["Image"])
+        assert dict((row[0], row[3]) for row in rows)[10] == 1000
+
+    def test_single_start_tagset_without_coalesce(self, timed_db_config):
+        db_file = timed_db_config.collection_configs["testcol"].database_file
+        conn = sqlite3.connect(str(db_file))
+        conn.execute("DELETE FROM tagsets WHERE name = 'Keyframe (ms)'")
+        conn.commit()
+        conn.close()
+
+        repo = _load(timed_db_config)
+        rows = repo.get_group_segment_times("testcol", [10], ["Image"])
+        assert sorted(row[0] for row in rows) == [10, 11]
+
+    def test_anchors_beyond_the_sqlite_parameter_limit(self, timed_db_config):
+        repo = _load(timed_db_config)
+        anchors = [10] + list(range(100_000, 101_500))
+        rows = repo.get_group_segment_times("testcol", anchors, ["Image"])
+        assert sorted(row[0] for row in rows) == [10, 11, 12]
+
+    def test_no_time_tagsets_raises(self, multi_index_db_config):
+        repo = _load(multi_index_db_config)
+        with pytest.raises(DatabaseError):
+            repo.get_group_segment_times("testcol", [10], ["Image"])

@@ -105,9 +105,12 @@ All endpoints are mounted under `/exq/`. We may introduce a semantic versioning 
 | POST | `/exq/search/clip` | Text-to-image search using CLIP |
 | POST | `/exq/search/text` | Text search using sentence-transformers (e.g. transcripts) |
 | POST | `/exq/search/rf` | Relevance feedback search |
+| POST | `/exq/search/temporal` | Temporal search over an ordered sequence of text or RF queries |
 | POST | `/exq/search/faceted` | Filter-only search |
 
 `/clip`, `/text`, and `/rf` all accept an optional `index_name` to target a specific index within a collection (of the matching `embedding_type` for `/clip`/`/text`); omitted, each falls back to the collection's default index for that family.
+
+`/temporal` takes ordered `hops` (`query` or `rf`), each with an optional `index_name` (default index if omitted). Segment times are read from the `Start (ms)`, `Keyframe (ms)`, or `Time (ms)` tagset and the optional `End (ms)` tagset.
 
 ### Items
 

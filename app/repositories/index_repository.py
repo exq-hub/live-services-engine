@@ -47,6 +47,10 @@ from app.core.indexes import BaseIndex, FaissIndex, ZarrIndex, open_zarr_array
 from ..core.exceptions import IndexError
 
 
+SCORE_BLOCK_ROWS = 50_000
+"""Candidate embedding rows read and scored per block in `score_subset`."""
+
+
 class IndexRepository:
     """Repository for managing vector indices and embeddings."""
 
@@ -188,6 +192,46 @@ class IndexRepository:
         if not candidate_ids or k <= 0:
             return [], []
 
+        ids, scores = self.score_subset(
+            collection, query_vector.reshape(1, -1), candidate_ids, index_name
+        )
+        scores = scores[0]
+
+        if k < len(ids):
+            top = np.argpartition(scores, -k)[-k:]
+            top = top[np.argsort(scores[top])[::-1]]
+        else:
+            top = np.argsort(scores)[::-1]
+
+        return ids[top].tolist(), scores[top].tolist()
+
+    def score_subset(
+        self,
+        collection: str,
+        query_vectors: np.ndarray,
+        candidate_ids: Set[int],
+        index_name: Optional[str] = None,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Exact dot-product scores of several queries against candidate_ids.
+
+        Every query is scored in the same pass over the candidate rows, which
+        are read in blocks of `SCORE_BLOCK_ROWS` so a large candidate set is
+        never loaded at once.
+
+        Args:
+            collection: Name of the collection
+            query_vectors: ``(h, d)`` array, one query per row
+            candidate_ids: Index positions to score
+            index_name: Name of the index, defaulting to the collection's default index
+
+        Returns:
+            ``(ids, scores)`` with ids the candidates in ascending order and
+            scores an ``(h, len(ids))`` array aligned with them
+        """
+        queries = np.atleast_2d(query_vectors)
+        if not candidate_ids:
+            return np.empty(0, dtype=np.int64), np.empty((queries.shape[0], 0))
+
         index_name = self._resolve_index_name(collection, index_name)
         emb_arr = self.get_embeddings_array(collection, index_name)
 
@@ -195,18 +239,19 @@ class IndexRepository:
             # Sorted so the orthogonal selection reads chunks in order
             ids = np.fromiter(candidate_ids, dtype=np.int64, count=len(candidate_ids))
             ids.sort()
-            scores = emb_arr.oindex[ids] @ query_vector.reshape(-1)
-
-            if k < len(ids):
-                top = np.argpartition(scores, -k)[-k:]
-                top = top[np.argsort(scores[top])[::-1]]
-            else:
-                top = np.argsort(scores)[::-1]
-
-            return ids[top].tolist(), scores[top].tolist()
+            scores = np.empty(
+                (queries.shape[0], len(ids)),
+                dtype=np.result_type(emb_arr.dtype, queries.dtype),
+            )
+            for start in range(0, len(ids), SCORE_BLOCK_ROWS):
+                block = ids[start : start + SCORE_BLOCK_ROWS]
+                scores[:, start : start + len(block)] = (
+                    emb_arr.oindex[block] @ queries.T
+                ).T
+            return ids, scores
         except Exception as e:
             raise IndexError(
-                f"Subset search failed for collection {collection!r}, index {index_name!r}: {e}"
+                f"Subset scoring failed for collection {collection!r}, index {index_name!r}: {e}"
             )
 
     def get_embeddings_array(

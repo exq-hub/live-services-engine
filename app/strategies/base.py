@@ -24,6 +24,8 @@ satisfy, organised in a single-level hierarchy:
 - `RFSearchStrategy` -- specialization accepting ``pos``/``neg`` example
   lists and an optional ``query`` for pseudo relevance feedback.
 - `FacetedSearchStrategy` -- specialization accepting only ``filters``.
+- `TemporalSearchStrategyABC` is a specialization accepting an ordered
+  list of ``hops`` and returning chains instead of media IDs.
 
 New strategies should subclass the most specific base that fits their input
 contract and register themselves in `SearchService`.
@@ -32,7 +34,7 @@ contract and register themselves in `SearchService`.
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
-from ..schemas import ActiveFilters
+from ..schemas import ActiveFilters, TemporalChain, TemporalHop
 
 
 class SearchStrategy(ABC):
@@ -179,5 +181,47 @@ class FacetedSearchStrategyABC(SearchStrategy):
 
         Returns:
             List of item indices matching the relevance feedback criteria
+        """
+        pass
+
+
+class TemporalSearchStrategyABC(SearchStrategy):
+    """Abstract base class for temporal search strategies.
+
+    This class specializes the SearchStrategy interface for strategies
+    that match an ordered sequence of queries (hops) to chains of segments
+    occurring one after another within a video.
+    """
+
+    @abstractmethod
+    async def search(
+        self,
+        collection: str,
+        hops: List[TemporalHop],
+        n: int,
+        seen: List[int],
+        excluded: List[int],
+        filters: Optional[ActiveFilters] = None,
+        top_r: int = 1000,
+        rrf_k: float = 60.0,
+        chains_per_video: int = 1,
+        iou_threshold: float = 0.5,
+    ) -> List[TemporalChain]:
+        """Execute a temporal search and return the ranked chains.
+
+        Args:
+            collection: Name of the data collection to search
+            hops: The ordered queries, first hop first
+            n: Number of distinct videos to return
+            seen: Media IDs skipped as first-hop anchors
+            excluded: Media IDs to exclude, along with their whole videos
+            filters: Optional filters applied to every hop
+            top_r: Number of first-hop anchor segments to retrieve
+            rrf_k: Smoothing constant of the RRF score
+            chains_per_video: Maximum chains per video, or -1 for all
+            iou_threshold: IoU above which two chains of a video overlap
+
+        Returns:
+            Chains grouped by video, videos in rank order
         """
         pass

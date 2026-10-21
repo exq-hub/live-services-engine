@@ -42,7 +42,7 @@ The pipeline:
    `VectorSearchMixin`.
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from sklearn.linear_model import SGDClassifier
@@ -105,6 +105,52 @@ class RFSearchStrategy(VectorSearchMixin, RFSearchStrategyABC):
         collection_config = self.config.collection_configs[collection]
         return collection_config.resolve_index(index_name)
 
+    async def build_query(
+        self,
+        collection: str,
+        pos: List[int],
+        neg: List[int],
+        seen: List[int],
+        excluded: List[int],
+        filters: Optional[ActiveFilters] = None,
+        query: Optional[str] = None,
+        index_name: Optional[str] = None,
+    ) -> Tuple[IndexConfig, Optional[np.ndarray]]:
+        """Resolve the target index and train the SVM hyperplane used as its query vector.
+
+        The hyperplane is None when there are no positive samples to train on.
+        """
+        index_config = self._resolve_index(collection, index_name)
+
+        # Get embeddings array
+        emb_arr = self.index_repo.get_embeddings_array(collection, index_config.name)
+        total_items = self.database_repo.get_total_items(collection, index_config.name)
+
+        # Prepare positive samples
+        pos_samples = await self._prepare_positive_samples(
+            collection, index_config, pos, query, seen, excluded, filters
+        )
+
+        # Prepare negative samples
+        neg_samples = self._prepare_negative_samples(
+            collection, index_config.name, neg, total_items
+        )
+
+        # Train SVM classifier
+        if len(pos_samples) == 0:
+            return index_config, None
+
+        samples = emb_arr[np.concatenate((pos_samples, neg_samples))]
+        labels = np.concatenate(
+            ([1.0] * len(pos_samples), [-1.0] * len(neg_samples))
+        )
+
+        clf = SGDClassifier(random_state=42)
+        clf.fit(samples, labels)
+
+        # Use hyperplane for search
+        return index_config, clf.coef_
+
     async def search(
         self,
         collection: str,
@@ -119,36 +165,11 @@ class RFSearchStrategy(VectorSearchMixin, RFSearchStrategyABC):
     ) -> List[int]:
         """Execute relevance feedback search using SVM."""
         try:
-            index_config = self._resolve_index(collection, index_name)
-
-            # Get embeddings array
-            emb_arr = self.index_repo.get_embeddings_array(collection, index_config.name)
-            total_items = self.database_repo.get_total_items(collection, index_config.name)
-
-            # Prepare positive samples
-            pos_samples = await self._prepare_positive_samples(
-                collection, index_config, pos, query, seen, excluded, filters
+            index_config, hyperplane = await self.build_query(
+                collection, pos, neg, seen, excluded, filters, query, index_name
             )
-
-            # Prepare negative samples
-            neg_samples = self._prepare_negative_samples(
-                collection, index_config.name, neg, total_items
-            )
-
-            # Train SVM classifier
-            if len(pos_samples) == 0:
+            if hyperplane is None:
                 return []  # No positive samples to work with
-
-            samples = emb_arr[np.concatenate((pos_samples, neg_samples))]
-            labels = np.concatenate(
-                ([1.0] * len(pos_samples), [-1.0] * len(neg_samples))
-            )
-
-            clf = SGDClassifier(random_state=42)
-            clf.fit(samples, labels)
-
-            # Use hyperplane for search
-            hyperplane = clf.coef_
 
             # Process exclusions
             excluded_set = self._build_excluded_set(collection, excluded)

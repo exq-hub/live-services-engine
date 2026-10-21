@@ -55,6 +55,14 @@ from ..core.exceptions import DatabaseError
 import pandas as pd
 
 
+START_TIME_TAGSETS = ("Start (ms)", "Keyframe (ms)", "Time (ms)")
+"""Tagsets giving a segment's start time, in priority order. A segment's
+start is the first of these it has a value for."""
+
+END_TIME_TAGSET = "End (ms)"
+"""Tagset giving a segment's end time. Segments without one end at their start."""
+
+
 class DatabaseRepository:
     """Repository class for managing metadata, filters, and related item data.
 
@@ -89,6 +97,13 @@ class DatabaseRepository:
 
         self._tagtype_cache: Dict[str, Dict[int, str]] = {}
         """Per-collection tag-type lookup: ``collection -> tagtype_id -> tagtype_name``."""
+
+        self._time_tagsets_cache: Dict[
+            str, Tuple[List[Tuple[int, str]], Optional[Tuple[int, str]]]
+        ] = {}
+        """Per-collection ``(tagset_id, tagtype_name)`` of the start time
+        tagsets present, in `START_TIME_TAGSETS` order, and of the end time
+        tagset if present."""
 
         self._sqlite_limit = 999
         """SQLite has a default limit of 999 parameters per query, so we may need to batch queries that exceed this limit."""
@@ -437,6 +452,19 @@ class DatabaseRepository:
                 f"Failed to retrieve media metadata for media {media_id}: {e}"
             )
 
+    @staticmethod
+    def _tagset_value_subquery(tagtype: str, agg: str) -> str:
+        """Scalar subquery aggregating one tagset's values for the outer ``m``.
+
+        Correlated on ``m.id`` and taking the tagset ID as its single bind
+        parameter. Resolves through the covering taggings primary key and
+        the tag table's primary key, so it costs a few index seeks per media.
+        """
+        return f"""(SELECT {agg}(t.value)
+                    FROM taggings tgs
+                    JOIN {tagtype}_tags t ON t.id = tgs.tag_id
+                    WHERE tgs.media_id = m.id AND t.tagset_id = ?)"""
+
     def get_related_items(
         self,
         collection: str,
@@ -486,10 +514,7 @@ class DatabaseRepository:
                     rows = cursor.execute(
                         f"""
                         SELECT m.id,
-                               (SELECT {agg}(t.value)
-                                FROM taggings tgs
-                                JOIN {tagtype}_tags t ON t.id = tgs.tag_id
-                                WHERE tgs.media_id = m.id AND t.tagset_id = ?) AS sort_value
+                               {self._tagset_value_subquery(tagtype, agg)} AS sort_value
                         FROM medias m
                         WHERE m.group_id = ?
                         ORDER BY sort_value IS NULL, sort_value {direction}
@@ -507,7 +532,142 @@ class DatabaseRepository:
             if cursor:
                 cursor.close()
 
-    
+    def _resolve_time_tagsets(
+        self, collection: str, cursor: sqlite3.Cursor
+    ) -> Tuple[List[Tuple[int, str]], Optional[Tuple[int, str]]]:
+        """Resolve the collection's start and end time tagsets, once per collection."""
+        if collection not in self._time_tagsets_cache:
+            names = (*START_TIME_TAGSETS, END_TIME_TAGSET)
+            rows = cursor.execute(
+                f"""
+                SELECT name, id, tagtype_id
+                FROM tagsets
+                WHERE name IN ({db_helper.placeholders(len(names))})
+                """,
+                list(names),
+            ).fetchall()
+            found = {
+                name: (tagset_id, self._tagtype_cache[collection][tagtype_id])
+                for name, tagset_id, tagtype_id in rows
+            }
+            starts = [found[name] for name in START_TIME_TAGSETS if name in found]
+            if not starts:
+                raise DatabaseError(
+                    f"Collection {collection!r} has none of the start time "
+                    f"tagsets {list(START_TIME_TAGSETS)}"
+                )
+            self._time_tagsets_cache[collection] = (starts, found.get(END_TIME_TAGSET))
+        return self._time_tagsets_cache[collection]
+
+    def get_group_segment_times(
+        self,
+        collection: str,
+        anchor_ids: List[int],
+        source_types: List[str],
+    ) -> List[Tuple[int, int, str, float, float]]:
+        """Time every segment of the given source types in the anchors' groups.
+
+        Driven from the anchors, so the cost scales with the groups they
+        belong to rather than with the collection. Segments without a start
+        time are left out, and segments without an end time end at their
+        start.
+
+        Args:
+            collection: Name of the collection
+            anchor_ids: Media IDs whose groups (videos) to time
+            source_types: Source type names ('Image', 'Text', ...) to include
+
+        Returns:
+            ``(media_id, group_id, source_type, start_ms, end_ms)`` per segment
+        """
+        if not anchor_ids or not source_types:
+            return []
+
+        cursor = None
+        batch_conn = None
+        try:
+            cursor = self._db_connection[collection].cursor()
+            starts, end = self._resolve_time_tagsets(collection, cursor)
+            source_type_names = dict(
+                cursor.execute(
+                    f"""
+                    SELECT id, name
+                    FROM source_types
+                    WHERE name IN ({db_helper.placeholders(len(source_types))})
+                    """,
+                    list(source_types),
+                ).fetchall()
+            )
+            if not source_type_names:
+                return []
+
+            start_subqueries = [
+                self._tagset_value_subquery(tagtype, "MIN") for _, tagtype in starts
+            ]
+            # SQLite's coalesce() needs at least two arguments
+            start_sql = (
+                start_subqueries[0]
+                if len(start_subqueries) == 1
+                else f"COALESCE({', '.join(start_subqueries)})"
+            )
+            end_sql = self._tagset_value_subquery(end[1], "MAX") if end else "NULL"
+            params = (
+                [tagset_id for tagset_id, _ in starts]
+                + ([end[0]] if end else [])
+                + list(source_type_names)
+            )
+
+            # Anchors can exceed the SQLite parameter limit, so they go in a
+            # temp table on a dedicated connection, as in get_filtered_media_ids
+            batch_conn = sqlite3.connect(self._db_path[collection], autocommit=False)
+            batch_conn.execute(
+                "CREATE TEMPORARY TABLE temp_anchor (id INTEGER PRIMARY KEY)"
+            )
+            batch_conn.executemany(
+                "INSERT OR IGNORE INTO temp_anchor (id) VALUES (?)",
+                [(media_id,) for media_id in anchor_ids],
+            )
+            rows = batch_conn.execute(
+                f"""
+                SELECT m.id,
+                       m.group_id,
+                       m.source_type,
+                       {start_sql} AS start_ms,
+                       {end_sql} AS end_ms
+                FROM medias m
+                WHERE m.group_id IN (
+                    SELECT a.group_id
+                    FROM medias a
+                    WHERE a.id IN (SELECT id FROM temp_anchor)
+                )
+                AND m.source_type IN ({db_helper.placeholders(len(source_type_names))})
+                """,
+                params,
+            ).fetchall()
+        except DatabaseError:
+            raise
+        except Exception as e:
+            raise DatabaseError(
+                f"Failed to time the anchors' group segments in {collection}: {e}"
+            )
+        finally:
+            if cursor:
+                cursor.close()
+            if batch_conn:
+                batch_conn.close()
+
+        return [
+            (
+                media_id,
+                group_id,
+                source_type_names[source_type],
+                start_ms,
+                start_ms if end_ms is None else end_ms,
+            )
+            for media_id, group_id, source_type, start_ms, end_ms in rows
+            if start_ms is not None
+        ]
+
     def get_item(
         self, collection: str, media_id: int, filters: List[int] = []
     ) -> Optional[Dict[str, Any]]:
@@ -716,6 +876,8 @@ class DatabaseRepository:
         if collection:
             self._item_datapoint_mapping_cache.pop(collection, None)
             self._rev_item_datapoint_mapping_cache.pop(collection, None)
+            self._time_tagsets_cache.pop(collection, None)
         else:
             self._item_datapoint_mapping_cache.clear()
             self._rev_item_datapoint_mapping_cache.clear()
+            self._time_tagsets_cache.clear()

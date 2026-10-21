@@ -16,7 +16,7 @@
 
 """Search endpoint route handlers.
 
-Defines four POST endpoints under ``/exq/search/``:
+Defines five POST endpoints under ``/exq/search/``:
 
 - ``/clip`` -- CLIP text-to-image similarity search.
 - ``/text`` -- text-embedding search (sentence-transformers) over
@@ -24,18 +24,26 @@ Defines four POST endpoints under ``/exq/search/``:
 - ``/rf`` -- relevance-feedback search (SVM-based); targets whichever
   index ``RFSearchRequest.index_name`` names, or the collection's
   default when omitted.
+- ``/temporal`` matches an ordered sequence of text or RF queries, each
+  against its own index, to chains of segments occurring one after another in a video.
 - ``/faceted`` -- filter-only search with no vector similarity.
 
 Each endpoint validates the incoming Pydantic request, delegates to
 `SearchService`, schedules a background audit-log task, and returns a
-``{"suggestions": [...]}`` response containing the matching media IDs.
+``{"suggestions": [...]}`` response containing the matching media IDs,
+or for ``/temporal`` the ranked `TemporalChain` objects.
 """
 
 from typing import Any, Dict
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
-from ...schemas import FacetedSearchRequest, TextSearchRequest, RFSearchRequest
+from ...schemas import (
+    FacetedSearchRequest,
+    TextSearchRequest,
+    RFSearchRequest,
+    TemporalSearchRequest,
+)
 from ...services.search_service import SearchService
 from ...services.logging_service import LoggingService
 from ...core.exceptions import SearchError
@@ -159,6 +167,51 @@ async def rf_search(
         )
 
         return {"suggestions": result["suggestions"]}
+
+    except SearchError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.post("/temporal")
+async def temporal_search(
+    request: TemporalSearchRequest,
+    background_tasks: BackgroundTasks,
+    search_service: SearchService = Depends(get_search_service),
+    logging_service: LoggingService = Depends(get_logging_service),
+) -> Dict[str, Any]:
+    """Search for chains of segments matching an ordered sequence of queries."""
+    try:
+        result = await search_service.search_temporal(request)
+        # Using model_dump() to convert TemporalChain into a plain dict for audit logger
+        chains = [chain.model_dump() for chain in result["suggestions"]]
+
+        background_tasks.add_task(
+            logging_service.log_search_request,
+            "Temporal Search",
+            request.session_info.session,
+            request.session_info.modelId,
+            request.session_info.collection,
+            {
+                "hops": [hop.model_dump(mode="json") for hop in request.hops],
+                "n_seen": len(request.seen),
+                "filters": request.filters.model_dump_json()
+                if request.filters
+                else None,
+                "excluded": request.excluded,
+                "top_r": request.top_r,
+                "rrf_k": request.rrf_k,
+                "chains_per_video": request.chains_per_video,
+                "iou_threshold": request.iou_threshold,
+                "n_requested": request.n,
+            },
+            chains,
+            result["request_timestamp"],
+            result["completion_time"],
+        )
+
+        return {"suggestions": chains}
 
     except SearchError as e:
         raise HTTPException(status_code=400, detail=str(e))
