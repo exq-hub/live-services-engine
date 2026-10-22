@@ -387,6 +387,72 @@ class TestGetRelatedItems:
             repo.get_related_items("testcol", 100, sort_by=3, sort_order="up")
 
 
+@pytest.fixture
+def tags_db_config(related_db_config):
+    """Adds the generic ``tags`` table that `get_item` joins through for
+    metadata, so `get_items` can be checked against it."""
+    db_file = related_db_config.collection_configs["testcol"].database_file
+    conn = sqlite3.connect(str(db_file))
+    conn.executescript(
+        """
+        CREATE TABLE tags (id INTEGER PRIMARY KEY, tagset_id INTEGER);
+        INSERT INTO tags (id, tagset_id)
+            SELECT id, tagset_id FROM numerical_int_tags
+            UNION ALL
+            SELECT id, tagset_id FROM alphanumerical_tags;
+        """
+    )
+    conn.commit()
+    conn.close()
+    return related_db_config
+
+
+class TestGetItems:
+    def test_returns_found_items_and_leaves_out_unknown_ids(
+        self, related_db_config
+    ):
+        repo = _load(related_db_config)
+        items = repo.get_items("testcol", [10, 12, 999])
+        assert sorted(items) == [10, 12]
+        assert items[12] == {
+            "item_id": 12,
+            "media_uri": "img3.jpg",
+            "source_type": 1,
+            "thumbnail_uri": "thumb4.jpg",
+            "group": 100,
+        }
+
+    def test_matches_get_item_without_filters(self, related_db_config):
+        repo = _load(related_db_config)
+        items = repo.get_items("testcol", [10, 11, 20])
+        for media_id in (10, 11, 20):
+            assert items[media_id] == repo.get_item("testcol", media_id)
+
+    def test_metadata_across_tagtype_tables(self, related_db_config):
+        repo = _load(related_db_config)
+        items = repo.get_items("testcol", [10, 11, 12], filters=[3, 4])
+        assert items[10]["metadata"] == {"Frame": 50, "Label": "b"}
+        assert items[11]["metadata"] == {"Frame": [20, 60], "Label": "a"}
+        assert items[12]["metadata"] == {"Label": "c"}
+
+    def test_metadata_matches_get_item(self, tags_db_config):
+        repo = _load(tags_db_config)
+        items = repo.get_items("testcol", [10, 11, 12, 20], filters=[3, 4])
+        for media_id in (10, 11, 12, 20):
+            assert items[media_id] == repo.get_item("testcol", media_id, [3, 4])
+
+    def test_ids_beyond_the_sqlite_parameter_limit(self, related_db_config):
+        repo = _load(related_db_config)
+        media_ids = [10] + list(range(100_000, 101_500))
+        items = repo.get_items("testcol", media_ids, filters=[3])
+        assert list(items) == [10]
+        assert items[10]["metadata"] == {"Frame": 50}
+
+    def test_empty_ids_returns_empty(self, related_db_config):
+        repo = _load(related_db_config)
+        assert repo.get_items("testcol", []) == {}
+
+
 def _add_group_media(path: Path, media_id: int, tag_id: int) -> None:
     """Add a Video group media (no group_id of its own) carrying one tag."""
     conn = sqlite3.connect(str(path))

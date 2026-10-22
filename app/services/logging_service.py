@@ -38,7 +38,7 @@ import asyncio
 import logging
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import msgpack
 from filelock import FileLock
@@ -243,11 +243,14 @@ class LoggingService:
         session: str,
         model_id: int,
         collection: str,
-        item_id: int,
-        item_name: str,
+        item_id: Union[int, List[int]],
+        item_name: Union[str, List[str]],
         additional_data: Optional[Dict[str, Any]] = None,
     ):
-        """Log item-related requests."""
+        """Log item-related requests.
+
+        A batch request passes lists of IDs and names instead of single values.
+        """
         data = {
             "session": session,
             "modelId": model_id,

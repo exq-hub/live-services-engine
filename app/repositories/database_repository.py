@@ -715,6 +715,116 @@ class DatabaseRepository:
             if cursor:
                 cursor.close()
 
+    def get_items(
+        self, collection: str, media_ids: List[int], filters: List[int] = []
+    ) -> Dict[int, Dict[str, Any]]:
+        """Retrieve many items' data in a fixed number of queries.
+
+        Args:
+            collection: Name of the collection
+            media_ids: Media IDs of the items to retrieve
+            filters: Tagset IDs whose values to include under ``metadata``.
+                If empty, ``metadata`` is left out, as in `get_item`
+
+        Returns:
+            Item dictionaries shaped like `get_item`'s, keyed by media ID.
+            IDs not found in the collection are absent.
+        """
+        if not media_ids:
+            return {}
+
+        cursor = None
+        batch_conn = None
+        try:
+            cursor = self._db_connection[collection].cursor()
+            # The IDs can exceed the SQLite parameter limit, so they go in a
+            # temp table on a dedicated connection, as in get_group_segment_times
+            batch_conn = sqlite3.connect(self._db_path[collection], autocommit=False)
+            batch_conn.execute(
+                "CREATE TEMPORARY TABLE temp_item (id INTEGER PRIMARY KEY)"
+            )
+            batch_conn.executemany(
+                "INSERT OR IGNORE INTO temp_item (id) VALUES (?)",
+                [(media_id,) for media_id in media_ids],
+            )
+            rows = batch_conn.execute(
+                """
+                SELECT m.id,
+                       m.source,
+                       m.source_type,
+                       m.thumbnail_uri,
+                       m.group_id
+                FROM medias m
+                WHERE m.id IN (SELECT id FROM temp_item)
+                """
+            ).fetchall()
+            items = {
+                media_id: {
+                    "item_id": media_id,
+                    "media_uri": source,
+                    "source_type": source_type,
+                    "thumbnail_uri": thumbnail_uri,
+                    "group": group_id,
+                }
+                for media_id, source, source_type, thumbnail_uri, group_id in rows
+            }
+            if not filters or not items:
+                return items
+
+            tagsets = cursor.execute(
+                f"""
+                SELECT id, name, tagtype_id
+                FROM tagsets
+                WHERE id IN ({db_helper.placeholders(len(filters))})
+                ORDER BY id
+                """,
+                list(filters),
+            ).fetchall()
+            tagset_ids_by_tagtype: Dict[str, List[int]] = {}
+            for tagset_id, _, tagtype_id in tagsets:
+                tagtype = self._tagtype_cache[collection][tagtype_id]
+                tagset_ids_by_tagtype.setdefault(tagtype, []).append(tagset_id)
+
+            # One query per tag type table, covering every item and tagset in it
+            values: Dict[Tuple[int, int], List[Any]] = {}
+            for tagtype, tagset_ids in tagset_ids_by_tagtype.items():
+                value_rows = batch_conn.execute(
+                    f"""
+                    SELECT tgs.media_id, t.tagset_id, t.value
+                    FROM taggings tgs
+                    JOIN {tagtype}_tags t ON t.id = tgs.tag_id
+                    WHERE tgs.media_id IN (SELECT id FROM temp_item)
+                    AND t.tagset_id IN ({db_helper.placeholders(len(tagset_ids))})
+                    ORDER BY t.id
+                    """,
+                    tagset_ids,
+                ).fetchall()
+                for media_id, tagset_id, value in value_rows:
+                    values.setdefault((media_id, tagset_id), []).append(value)
+
+            # Keys follow tagset ID order and a lone value stays unwrapped,
+            # matching get_media_metadata
+            for media_id, item in items.items():
+                item["metadata"] = {}
+                for tagset_id, tagset_name, _ in tagsets:
+                    tagset_values = values.get((media_id, tagset_id))
+                    if tagset_values:
+                        item["metadata"][tagset_name] = (
+                            tagset_values
+                            if len(tagset_values) > 1
+                            else tagset_values[0]
+                        )
+            return items
+        except Exception as e:
+            raise DatabaseError(
+                f"Failed to retrieve item data for {len(media_ids)} items from {collection}: {e}"
+            )
+        finally:
+            if cursor:
+                cursor.close()
+            if batch_conn:
+                batch_conn.close()
+
     def get_total_items(self, collection: str, index: Optional[str] = None) -> int:
         """Get the total count of items in the specified collection/index.
 

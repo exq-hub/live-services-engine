@@ -35,7 +35,7 @@ search
     `TemporalSearchRequest` with its `TemporalHop` variants and its
     `TemporalChain` result are the temporal search payloads.
 items
-    `ItemRequest`, `ItemDetailRequest`, `RelatedItemsRequest`,
+    `ItemRequest`, `ItemBatchRequest`, `ItemDetailRequest`, `RelatedItemsRequest`,
     `IsExcludedRequest`, `ItemInfo`, `ClearItemSetRequest` -- item endpoint
     payloads.
 logging
@@ -66,6 +66,7 @@ from .search import (
 )
 from .items import (
     ItemRequest,
+    ItemBatchRequest,
     ItemDetailRequest,
     RelatedItemsRequest,
     IsExcludedRequest,
@@ -95,6 +96,7 @@ __all__ = [
     "TemporalSearchRequest",
     "TemporalChain",
     "ItemRequest",
+    "ItemBatchRequest",
     "ItemDetailRequest",
     "RelatedItemsRequest",
     "IsExcludedRequest",

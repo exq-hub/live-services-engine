@@ -117,6 +117,7 @@ All endpoints are mounted under `/exq/`. We may introduce a semantic versioning 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/exq/item/info` | Basic item info (URI, thumbnails); pass optional `filterIds` to also get their values under `metadata` |
+| POST | `/exq/item/info/batch` | Basic item info for many `mediaIds` in one call (same per-item shape as `/exq/item/info`); unknown IDs are returned under `missing` |
 | POST | `/exq/item/base` | **Deprecated** -- alias of `/exq/item/info` |
 | POST | `/exq/item/details` | **Deprecated** -- use `/exq/item/info` with `filterIds`. Fetches base info and returns only `metadata` |
 | POST | `/exq/item/related` | Related items by group |

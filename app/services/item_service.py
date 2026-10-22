@@ -24,6 +24,8 @@ Key operations:
 
 - **Base info** -- media URI, thumbnail path, source type, group ID, plus
   metadata values for selected tagsets/filters when ``filterIds`` is given.
+- **Batch info** returns base info for many items in one call, listing the
+  IDs not found separately.
 - **Detailed info** -- deprecated; metadata values only, derived from base info.
 - **Related items** -- other media items sharing the same ``group_id``,
   optionally sorted by a tagset's values.
@@ -33,10 +35,15 @@ Key operations:
 
 from typing import Dict, List, Optional, Tuple, Any
 
-from app.core.config import ConfigManager
+from app.core.config import CollectionConfig, ConfigManager
 from app.repositories.database_repository import DatabaseRepository
 
-from ..schemas import ItemDetailRequest, ItemRequest, IsExcludedRequest
+from ..schemas import (
+    ItemBatchRequest,
+    ItemDetailRequest,
+    ItemRequest,
+    IsExcludedRequest,
+)
 from ..core.exceptions import DatabaseError
 
 
@@ -69,17 +76,57 @@ class ItemService:
         # Get collection config for paths
         collection_config = self.config_manager.config.collection_configs[collection]
 
+        return self._format_item(
+            request.mediaId, item, collection_config, bool(request.filterIds)
+        )
+
+    def get_items_base_info(self, request: ItemBatchRequest) -> Dict[str, Any]:
+        """Get basic information for many items in one call.
+
+        Returns the `get_item_base_info` result of every found item under
+        ``items``, in request order with duplicates collapsed, and the IDs
+        not found in the collection under ``missing``.
+        """
+        collection = request.session_info.collection
+        media_ids = list(dict.fromkeys(request.mediaIds))
+        items = self.database_repo.get_items(collection, media_ids, request.filterIds)
+
+        # Get collection config for paths
+        collection_config = self.config_manager.config.collection_configs[collection]
+
+        return {
+            "items": [
+                self._format_item(
+                    media_id,
+                    items[media_id],
+                    collection_config,
+                    bool(request.filterIds),
+                )
+                for media_id in media_ids
+                if media_id in items
+            ],
+            "missing": [media_id for media_id in media_ids if media_id not in items],
+        }
+
+    def _format_item(
+        self,
+        media_id: int,
+        item: Dict[str, Any],
+        collection_config: CollectionConfig,
+        include_metadata: bool,
+    ) -> Dict[str, Any]:
+        """Shape a repository item into the item info response."""
         result = {
-            "id": request.mediaId,
+            "id": media_id,
             "name": item["item_id"],
-            "mediaId": request.mediaId,
+            "mediaId": media_id,
             "mediaType": item["source_type"],
             "thumbPath": collection_config.thumbnail_url(item["thumbnail_uri"]),
             "srcPath": collection_config.original_url(item["media_uri"]),
             "groupId": item["group"],
         }
 
-        if request.filterIds:
+        if include_metadata:
             result["metadata"] = item.get("metadata") or {}
 
         return result

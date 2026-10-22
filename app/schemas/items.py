@@ -41,6 +41,21 @@ class ItemRequest(BaseModel):
     """Session context information."""
 
 
+class ItemBatchRequest(BaseModel):
+    """Request model for retrieving basic information about many items at once."""
+
+    mediaIds: list[int]
+    """Media IDs to retrieve. Duplicates are collapsed and unknown IDs are
+    reported back under ``missing``."""
+
+    filterIds: list[int] = []
+    """Optional tagset/filter IDs. When non-empty, their values are returned
+    under each item's ``metadata``."""
+
+    session_info: SessionInfo
+    """Session context information."""
+
+
 class ItemDetailRequest(ItemRequest):
     """Deprecated: use `ItemRequest` with ``filterIds`` on ``/exq/item/info``.
 
