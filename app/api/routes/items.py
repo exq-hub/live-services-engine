@@ -66,7 +66,7 @@ async def get_item_base_info(
     existing clients.
     """
     try:
-        result = item_service.get_item_base_info(request)
+        result = item_service.get_item_info(request)
 
         background_tasks.add_task(
             logging_service.log_item_request,
@@ -101,7 +101,7 @@ async def get_items_base_info(
     instead of failing the request.
     """
     try:
-        result = item_service.get_items_base_info(request)
+        result = item_service.get_items_info(request)
 
         background_tasks.add_task(
             logging_service.log_item_request,
@@ -169,7 +169,7 @@ async def get_related_items(
             request, sort_by=request.sortBy, sort_order=request.sortOrder
         )
 
-        base_info = item_service.get_item_base_info(
+        info = item_service.get_item_info(
             ItemRequest(mediaId=request.mediaId, session_info=request.session_info)
         )
 
@@ -180,7 +180,7 @@ async def get_related_items(
             request.session_info.modelId,
             request.session_info.collection,
             request.mediaId,
-            base_info["name"],
+            info["name"],
         )
 
         return result
@@ -202,7 +202,7 @@ async def is_item_excluded(
     try:
         result = item_service.is_item_excluded(request)
 
-        base_info = item_service.get_item_base_info(
+        info = item_service.get_item_info(
             ItemRequest(mediaId=request.itemId, session_info=request.session_info)
         )
 
@@ -213,7 +213,7 @@ async def is_item_excluded(
             request.session_info.modelId,
             request.session_info.collection,
             request.itemId,
-            base_info["name"],
+            info["name"],
             {"excluded": result["excludedOrNot"]},
         )
 

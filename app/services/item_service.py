@@ -57,7 +57,7 @@ class ItemService:
         self.config_manager: ConfigManager = config_manager
         """Configuration manager providing collection media URLs."""
 
-    def get_item_base_info(self, request: ItemRequest) -> Dict[str, Any]:
+    def get_item_info(self, request: ItemRequest) -> Dict[str, Any]:
         """Get basic information for an item.
 
         If ``request.filterIds`` is non-empty, the values of those
@@ -80,10 +80,10 @@ class ItemService:
             request.mediaId, item, collection_config, bool(request.filterIds)
         )
 
-    def get_items_base_info(self, request: ItemBatchRequest) -> Dict[str, Any]:
+    def get_items_info(self, request: ItemBatchRequest) -> Dict[str, Any]:
         """Get basic information for many items in one call.
 
-        Returns the `get_item_base_info` result of every found item under
+        Returns the `get_item_info` result of every found item under
         ``items``, in request order with duplicates collapsed, and the IDs
         not found in the collection under ``missing``.
         """
@@ -134,10 +134,10 @@ class ItemService:
     def get_item_detailed_info(self, request: ItemDetailRequest) -> Dict[str, Any]:
         """Get detailed information for an item.
 
-        Deprecated: use `get_item_base_info` with ``filterIds``. This fetches
+        Deprecated: use `get_item_info` with ``filterIds``. This fetches
         the full base info and throws everything away except ``metadata``.
         """
-        return self.get_item_base_info(request).get("metadata", {})
+        return self.get_item_info(request).get("metadata", {})
 
     def get_related_items(
         self,
