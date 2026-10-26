@@ -94,6 +94,12 @@ uv run invoke stop
 
 Once running, the interactive API docs are available at `http://localhost:8000/docs`.
 
+### Model cache
+
+The first time a CLIP model is loaded, the LSE downloads it and caches its text encoder in `data/models/` and its tokenizer in `data/tokenizers/`. Later startups load from these files, so the server runs without internet once every configured model has been loaded once. Models for non-default indexes load on first use, so query those once while online too.
+
+Delete a cached file to force a fresh download, for example after upgrading `open_clip_torch` or `transformers`. Text (sentence-transformers) models are cached by their own library instead.
+
 ## API
 
 All endpoints are mounted under `/exq/`. We may introduce a semantic versioning code into the API endpoint before release.

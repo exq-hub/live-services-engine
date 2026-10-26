@@ -27,7 +27,10 @@ This module provides two main components:
     `TextModelManager` loads sentence-transformers models for indexes
     with ``embedding_type = "Text"``. Each loads one model per distinct
     `model_name` referenced by its own family's indexes, once at
-    startup, cached for the application lifetime.
+    startup, cached for the application lifetime. `CLIPModelManager`
+    also caches each text encoder under ``./data/models/`` (as
+    ``<model_name>_text.pth``) and each tokenizer under
+    ``./data/tokenizers/``, so later startups work offline.
 
 `ApplicationContainer`
     The central dependency-injection container that wires together all
@@ -233,6 +236,7 @@ class CLIPModelManager(ModelManager):
                     device=self.device,
                 )
                 text_model = model.text
+                cache_path.parent.mkdir(parents=True, exist_ok=True)
                 torch.save(text_model, cache_path)
             else:
                 text_model = torch.load(cache_path, weights_only=False).to(self.device)
@@ -245,9 +249,24 @@ class CLIPModelManager(ModelManager):
 
     @timer_decorator
     def _load_tokenizer(self, model_name: str) -> Any:
-        """Load the CLIP tokenizer matching `model_name`."""
+        """Load the CLIP tokenizer matching `model_name`, caching it on disk.
+
+        The cache lets startup work offline, since open_clip otherwise
+        contacts the Hugging Face Hub every time it builds the tokenizer.
+        """
         try:
-            return open_clip.get_tokenizer(model_name)
+            cache_path = self._tokenizer_cache_path(model_name)
+
+            if not cache_path.exists():
+                logger.info(f"{model_name} tokenizer not found locally, downloading...")
+                tokenizer = open_clip.get_tokenizer(model_name)
+                cache_path.parent.mkdir(parents=True, exist_ok=True)
+                torch.save(tokenizer, cache_path)
+            else:
+                tokenizer = torch.load(cache_path, weights_only=False)
+
+            return tokenizer
+
         except Exception as e:
             raise ModelLoadError(
                 f"Failed to load CLIP tokenizer for {model_name!r}: {e}"
@@ -257,7 +276,13 @@ class CLIPModelManager(ModelManager):
     def _text_encoder_cache_path(model_name: str) -> Path:
         """On-disk cache path for the extracted text tower of `model_name`."""
         safe_name = model_name.replace("/", "_")
-        return Path(f"./data/model_text_{safe_name}.pth")
+        return Path(f"./data/models/{safe_name}_text.pth")
+
+    @staticmethod
+    def _tokenizer_cache_path(model_name: str) -> Path:
+        """On-disk cache path for the tokenizer of `model_name`."""
+        safe_name = model_name.replace("/", "_")
+        return Path(f"./data/tokenizers/{safe_name}.pth")
 
 
 class TextModelManager(ModelManager):

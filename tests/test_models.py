@@ -140,11 +140,14 @@ def mocked_clip_loading(monkeypatch):
         "app.core.models.open_clip.get_tokenizer", lambda name: MagicMock()
     )
     monkeypatch.setattr("app.core.models.torch.save", lambda *a, **kw: None)
-    # Force the cache-miss branch of _load_text_encoder regardless of what's
-    # actually on disk in the repo's real ./data/ dir (e.g. a previously
-    # cached default model) -- otherwise a real cache hit silently bypasses
-    # create_model, and the corresponding model_name never lands here.
+    # Force the cache-miss branches of _load_text_encoder and _load_tokenizer
+    # regardless of what's actually on disk in the repo's real ./data/models/
+    # and ./data/tokenizers/ dirs (e.g. a previously cached default model).
+    # Otherwise a real cache hit silently bypasses create_model, and the
+    # corresponding model_name never lands here.
     monkeypatch.setattr("pathlib.Path.exists", lambda self: False)
+    # Keep the cache-miss branches from creating those dirs for real
+    monkeypatch.setattr("pathlib.Path.mkdir", lambda self, **kw: None)
     return create_model_calls
 
 
@@ -193,12 +196,14 @@ class TestCLIPModelManagerInitialize:
 
     def test_loads_from_cache_when_present(self, multi_model_config, monkeypatch):
         create_model_calls = []
+        get_tokenizer_calls = []
         monkeypatch.setattr(
             "app.core.models.open_clip.create_model",
             lambda name, **kw: create_model_calls.append(name),
         )
         monkeypatch.setattr(
-            "app.core.models.open_clip.get_tokenizer", lambda name: MagicMock()
+            "app.core.models.open_clip.get_tokenizer",
+            lambda name: get_tokenizer_calls.append(name),
         )
 
         cached_model = MagicMock()
@@ -210,6 +215,7 @@ class TestCLIPModelManagerInitialize:
         manager.initialize_models()
 
         assert create_model_calls == []
+        assert get_tokenizer_calls == []
 
 
 class TestCLIPModelManagerLazyLoad:
@@ -256,6 +262,20 @@ class TestCLIPModelManagerCachePath:
     def test_cache_path_sanitizes_slashes(self):
         path = CLIPModelManager._text_encoder_cache_path("org/model-name")
         assert "/" not in path.name
+
+    def test_tokenizer_cache_path_is_unique_per_model_name(self):
+        path_a = CLIPModelManager._tokenizer_cache_path("model-one")
+        path_b = CLIPModelManager._tokenizer_cache_path("model-two")
+        assert path_a != path_b
+
+    def test_tokenizer_cache_path_sanitizes_slashes(self):
+        path = CLIPModelManager._tokenizer_cache_path("org/model-name")
+        assert "/" not in path.name
+
+    def test_text_encoder_and_tokenizer_cache_paths_differ(self):
+        text_path = CLIPModelManager._text_encoder_cache_path("model-one")
+        tokenizer_path = CLIPModelManager._tokenizer_cache_path("model-one")
+        assert text_path != tokenizer_path
 
 
 class TestTextModelManagerInitialize:
