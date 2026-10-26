@@ -252,7 +252,7 @@ class CLIPModelManager(ModelManager):
         """Load the CLIP tokenizer matching `model_name`, caching it on disk.
 
         The cache lets startup work offline, since open_clip otherwise
-        contacts the Hugging Face Hub every time it builds the tokenizer.
+        fetches the tokenizer files online every time it builds the tokenizer.
         """
         try:
             cache_path = self._tokenizer_cache_path(model_name)
