@@ -26,8 +26,7 @@ The configuration is split into three tiers:
 1. **Global defaults** -- ``[default]`` table (e.g. ``model_device``).
 2. **Server / logging** -- ``[server]`` and ``[logging]`` reserved tables.
 3. **Collections** -- each ``[[collections]]`` table whose ``enabled`` flag
-   is true, with its own database, media URLs, log directory, and list of
-   indexes.
+   is true, with its own database, media URLs, and list of indexes.
 
 Each index requires an ``index_type`` and an ``embeddings_file`` (a Zarr
 archive of raw embeddings, always needed for relevance feedback). When
@@ -240,11 +239,6 @@ class CollectionConfig(BaseModel):
         ),
     )
 
-    # Optional: Logging
-    log_directory: Optional[str] = Field(
-        "./logs/", description="Directory for log files"
-    )
-
     @field_validator("database_file")
     @classmethod
     def validate_database_file(cls, v: str) -> str:
@@ -337,6 +331,9 @@ class LSEConfig(BaseModel):
 
     # Logging settings
     log_level: str = Field("INFO", description="Log level")
+    log_directory: str = Field(
+        "./logs/", description="Directory for the audit log files"
+    )
 
     @field_validator("model_device")
     @classmethod
@@ -424,7 +421,6 @@ class ConfigManager:
                     "thumbnail_media_params", {}
                 ),
                 original_media_params=collection_data.get("original_media_params", {}),
-                log_directory=collection_data.get("log_directory", "./logs/"),
                 preload_all_indexes=collection_data.get("preload_all_indexes", False),
                 indexes=indexes,
             )
@@ -448,6 +444,7 @@ class ConfigManager:
         logging_section = data.get("logging")
         if logging_section:
             config_dict["log_level"] = logging_section.get("level", "INFO")
+            config_dict["log_directory"] = logging_section.get("directory", "./logs/")
 
         return config_dict
 

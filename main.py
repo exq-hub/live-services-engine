@@ -42,6 +42,8 @@ Usage::
 
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -70,18 +72,12 @@ async def lifespan(app: FastAPI):
         # Initialize the application container
         container.initialize()
 
-        # Initialize logging service
+        # Initialize logging service, one audit log file per server start
         config = container.config_manager.config
-        # Use the first collection's log directory, or default
-        if config.collections and config.collection_configs:
-            first_collection = config.collections[0]
-            log_dir = (
-                config.collection_configs[first_collection].log_directory or "./logs"
-            )
-        else:
-            log_dir = "./logs"
-
-        audit_logger = AuditLogger(f"{log_dir}/audit.log")
+        started = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        audit_logger = AuditLogger(
+            str(Path(config.log_directory) / f"audit_{started}.log")
+        )
         logging_service = LoggingService(audit_logger)
         await logging_service.start()
 

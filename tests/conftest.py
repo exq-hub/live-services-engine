@@ -93,7 +93,6 @@ def collection_toml(
     original_media_url: str,
     indexes: str,
     enabled: bool = True,
-    log_directory: Optional[str] = None,
     preload_all_indexes: Optional[bool] = None,
     thumbnail_media_params: Optional[dict] = None,
     original_media_params: Optional[dict] = None,
@@ -111,8 +110,6 @@ def collection_toml(
         f'thumbnail_media_url = "{thumbnail_media_url}"',
         f'original_media_url = "{original_media_url}"',
     ]
-    if log_directory is not None:
-        lines.append(f'log_directory = "{log_directory}"')
     if preload_all_indexes is not None:
         lines.append(f"preload_all_indexes = {str(preload_all_indexes).lower()}")
     if thumbnail_media_params is not None:

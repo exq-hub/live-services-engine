@@ -45,6 +45,7 @@ reload = true
 
 [logging]
 level = "INFO"
+directory = "./logs/"   # one audit_<startup time>.log per server start
 
 # A collection declares one or more indexes, each independently picking
 # its own index_type ("zarr" uses the embeddings file directly as a

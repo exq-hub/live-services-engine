@@ -61,6 +61,7 @@ class TestMinimalConfig:
         assert config.port == 8000
         assert config.reload is True
         assert config.log_level == "INFO"
+        assert config.log_directory == "./logs/"
 
     def test_honors_server_and_logging_overrides(
         self, write_config, minimal_collection_toml
@@ -73,6 +74,7 @@ class TestMinimalConfig:
             "\n"
             "[logging]\n"
             'level = "DEBUG"\n'
+            'directory = "/var/log/exq/"\n'
             "\n" + minimal_collection_toml
         )
         path = write_config(text)
@@ -83,6 +85,7 @@ class TestMinimalConfig:
         assert config.port == 9001
         assert config.reload is False
         assert config.log_level == "DEBUG"
+        assert config.log_directory == "/var/log/exq/"
 
 
 class TestCollectionDiscovery:
