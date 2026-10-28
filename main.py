@@ -43,8 +43,9 @@ Usage::
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.core.models import container, ApplicationContainer
 from app.core.exceptions import LSEException, ConfigurationError
@@ -157,7 +158,7 @@ async def lse_exception_handler(request, exc: LSEException):
         except Exception:
             pass  # Don't fail the request if logging fails
 
-    return HTTPException(status_code=400, detail=exc.message)
+    return JSONResponse(status_code=400, content={"detail": exc.message})
 
 
 # Health check endpoint
@@ -186,10 +187,10 @@ async def health_check():
                         "reason": f"Database not loaded for {collection}",
                     }
 
-            if not index_repo.get_clip_index(collection):
+            if not index_repo.get_index(collection):
                 return {
                     "status": "unhealthy",
-                    "reason": f"CLIP index not loaded for {collection}",
+                    "reason": f"Default index not loaded for {collection}",
                 }
 
         return {
