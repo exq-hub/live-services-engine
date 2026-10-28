@@ -23,9 +23,9 @@ collection can hold more than one index/embedding representation.
 
 The configuration is split into three tiers:
 
-1. **Global defaults** -- ``[default]`` table (e.g. ``model_device``).
-2. **Server / logging** -- ``[server]`` and ``[logging]`` reserved tables.
-3. **Collections** -- each ``[[collections]]`` table whose ``enabled`` flag
+1. **Global defaults** -- ``[default]`` section (e.g. ``model_device``).
+2. **Server / logging** -- ``[server]`` and ``[logging]`` reserved sections.
+3. **Collections** -- each ``[[collections]]`` section whose ``enabled`` flag
    is true, with its own database, media URLs, and list of indexes.
 
 Each index requires an ``index_type`` and an ``embeddings_file`` (a Zarr

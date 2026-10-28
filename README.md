@@ -78,7 +78,7 @@ original_media_url = "https://localhost:5001/my_collection"
 # source_type = "Text"
 ```
 
-Each `[[collections]]` table defines a collection, with one or more nested `[[collections.indexes]]` tables for its embeddings/index configuration. See `data/config.toml.template` for the full set of per-index options (`model_name`, `source_type`, `tagset`, `preload_all_indexes`, etc.).
+Each `[[collections]]` section defines a collection, with one or more nested `[[collections.indexes]]` sections for its embeddings/index configuration. See `data/config.toml.template` for the full set of per-index options (`model_name`, `source_type`, `tagset`, `preload_all_indexes`, etc.).
 
 ## Usage
 

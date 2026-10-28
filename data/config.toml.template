@@ -17,8 +17,8 @@ directory = "./logs/"
 
 # ============================================================================
 # COLLECTION CONFIGURATIONS
-# Add a `[[collections]]` table for each collection, with one or more nested
-# `[[collections.indexes]]` tables. Set enabled = true to activate it.
+# Add a `[[collections]]` section for each collection, with one or more nested
+# `[[collections.indexes]]` sections. Set enabled = true to activate it.
 #
 # Each index picks its own `index_type` independently, "zarr" (the raw
 # embeddings file doubles as a brute-force index, no `index_file` needed)
