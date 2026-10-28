@@ -23,15 +23,18 @@ non-blocking audit logging via MessagePack serialization.
 Modules
 -------
 search
-    ``POST /exq/search/clip``, ``POST /exq/search/rf``,
+    ``POST /exq/search/clip``, ``POST /exq/search/text``,
+    ``POST /exq/search/rf``, ``POST /exq/search/temporal``,
     ``POST /exq/search/faceted`` -- search endpoints dispatching to
     `SearchService`.
 items
-    ``POST /exq/item/info``, ``POST /exq/item/base`` (deprecated alias),
+    ``POST /exq/item/info``, ``POST /exq/item/info/batch``,
+    ``POST /exq/item/base`` (deprecated alias),
     ``POST /exq/item/details`` (deprecated),
     ``POST /exq/item/related``, ``POST /exq/item/excluded`` -- item
     metadata and relationship endpoints dispatching to `ItemService`.
 admin
     Session initialization, collection info (total items, filters,
-    filter values), model lifecycle logging, and client-event logging.
+    filter values, indexes), model lifecycle logging, and client-event
+    logging.
 """
