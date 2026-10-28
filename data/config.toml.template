@@ -11,11 +11,14 @@ reload = true
 [logging]
 # Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL
 level = "INFO"
+# Directory for the audit log. Each server start writes a new
+# audit_<YYYY-MM-DD_HH-MM-SS>.log file here.
+directory = "./logs/"
 
 # ============================================================================
 # COLLECTION CONFIGURATIONS
-# Add a `[[collections]]` table for each collection, with one or more nested
-# `[[collections.indexes]]` tables. Set enabled = true to activate it.
+# Add a `[[collections]]` section for each collection, with one or more nested
+# `[[collections.indexes]]` sections. Set enabled = true to activate it.
 #
 # Each index picks its own `index_type` independently, "zarr" (the raw
 # embeddings file doubles as a brute-force index, no `index_file` needed)
@@ -39,9 +42,6 @@ original_media_url = "https://localhost:5001/collection1"
 #   https://localhost:5001/collection1/<uri>?token=your-token
 # thumbnail_media_params = { token = "your-token" }
 # original_media_params = { token = "your-token" }
-
-# --- Optional: Logging ---
-# log_directory = "./logs/collection1/"
 
 # --- Optional: Startup loading ---
 # By default only the default index's model, embeddings, and ANN structure
@@ -88,7 +88,6 @@ original_media_url = "https://localhost:5001/collection1"
 # database_file = "./data/collection2/collection2.db"
 # thumbnail_media_url = "https://localhost:5001/collection2"
 # original_media_url = "https://localhost:5001/collection2"
-# log_directory = "./logs/collection2/"
 #
 #   [[collections.indexes]]
 #   name = "CLIP_hnsw"
