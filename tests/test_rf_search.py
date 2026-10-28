@@ -157,3 +157,25 @@ class TestRandomFallbackSamples:
         strategy.database_repo.get_index_ids.assert_not_called()
         assert len(result) == 5
         assert all(0 <= v < 10 for v in result)
+
+
+class TestPseudoRFErrors:
+    def test_failing_query_encoding_raises(self, write_config, dummy_files):
+        strategy = _make_strategy(
+            write_config,
+            dummy_files,
+            index_toml(
+                name="idx", index_type="zarr", embeddings_file=dummy_files["embeddings_file"]
+            ),
+        )
+        strategy.clip_search._encode_text = MagicMock(
+            side_effect=RuntimeError("encoder failed")
+        )
+        index_config = strategy.config.collection_configs["testcol"].get_index("idx")
+
+        with pytest.raises(RuntimeError, match="encoder failed"):
+            asyncio.run(
+                strategy._prepare_positive_samples(
+                    "testcol", index_config, [1], "a query", [], [], None
+                )
+            )

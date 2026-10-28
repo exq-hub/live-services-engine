@@ -205,34 +205,30 @@ class RFSearchStrategy(VectorSearchMixin, RFSearchStrategyABC):
 
         # Add pseudo RF samples if query is provided
         if query is not None:
-            try:
-                query_strategy = self._query_strategies.get(index_config.embedding_type)
-                if query_strategy is None:
-                    raise SearchError(
-                        f"No text-query strategy available for embedding_type "
-                        f"{index_config.embedding_type!r}"
-                    )
-                # Encode/search against index_config directly rather than
-                # query_strategy.search(), which re-resolves the index for
-                # its own family and could pick a different same-family one.
-                text_features = await query_strategy._encode_text(
-                    index_config.model_name, query
+            query_strategy = self._query_strategies.get(index_config.embedding_type)
+            if query_strategy is None:
+                raise SearchError(
+                    f"No text-query strategy available for embedding_type "
+                    f"{index_config.embedding_type!r}"
                 )
-                excluded_set = self._build_excluded_set(collection, excluded)
-                seen_set = set(seen)
-                pseudo_rf = await query_strategy._search_with_expansion(
-                    collection,
-                    index_config.name,
-                    text_features,
-                    10,
-                    seen_set,
-                    excluded_set,
-                    filters,
-                )
-                positive_samples.extend(pseudo_rf)
-            except Exception:
-                # If pseudo RF fails, continue with just the provided positive samples
-                pass
+            # Encode/search against index_config directly rather than
+            # query_strategy.search(), which re-resolves the index for
+            # its own family and could pick a different same-family one.
+            text_features = await query_strategy._encode_text(
+                index_config.model_name, query
+            )
+            excluded_set = self._build_excluded_set(collection, excluded)
+            seen_set = set(seen)
+            pseudo_rf = await query_strategy._search_with_expansion(
+                collection,
+                index_config.name,
+                text_features,
+                10,
+                seen_set,
+                excluded_set,
+                filters,
+            )
+            positive_samples.extend(pseudo_rf)
 
         # If no positive samples and no query, fall back to random index
         # positions directly -- these aren't media IDs, so they don't go
