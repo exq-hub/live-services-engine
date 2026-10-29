@@ -17,8 +17,7 @@
 
 Mirrors test_clip_search.py's TestResolveIndex -- the resolution logic
 is shared (EmbeddingSearchStrategy._resolve_index), only the family
-differs. The full search pipeline is exercised once, via
-CLIPSearchStrategy; no need to duplicate it here.
+differs.
 """
 
 from unittest.mock import MagicMock

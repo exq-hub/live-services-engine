@@ -41,14 +41,14 @@ class _Searcher(VectorSearchMixin):
 @pytest.fixture
 def searcher():
     s = _Searcher()
-    # Media IDs and index positions coincide, to keep the sets readable.
+    # Media 100 + p is at index position p, so a missed conversion fails a test
     s.database_repo.get_index_ids.side_effect = (
-        lambda collection, ids, index_name, skip_unmapped=False: list(ids)
+        lambda collection, ids, index_name, skip_unmapped=False: [m - 100 for m in ids]
     )
     s.database_repo.get_media_ids.side_effect = (
-        lambda collection, ids, index_name: list(ids)
+        lambda collection, ids, index_name: [p + 100 for p in ids]
     )
-    s.database_repo.get_filtered_media_ids.return_value = {1, 2, 3, 4}
+    s.database_repo.get_filtered_media_ids.return_value = {101, 102, 103, 104}
     s.database_repo.get_total_items.return_value = 10
     s.index_repo.search_subset.return_value = ([4, 1], [0.9, 0.5])
     s.index_repo.search.return_value = ([4, 1], [0.9, 0.5])
@@ -62,8 +62,8 @@ def _run(searcher, filters):
             "idx",
             np.zeros((1, 3)),
             2,
-            seen_set={2},
-            excluded_set={3, 7},
+            seen_set={102},
+            excluded_set={103, 107},
             filters=filters,
         )
     )
@@ -76,7 +76,7 @@ def test_small_candidate_set_uses_exact_subset_search(searcher):
     _, _, k, candidates = searcher.index_repo.search_subset.call_args.args
     assert k == 2
     assert candidates == {1, 4}
-    assert result == [4, 1]
+    assert result == [104, 101]
 
 
 def test_large_candidate_set_falls_back_to_ann_search(searcher, monkeypatch):
@@ -87,7 +87,7 @@ def test_large_candidate_set_falls_back_to_ann_search(searcher, monkeypatch):
     searcher.index_repo.search_subset.assert_not_called()
     skip_ids = searcher.index_repo.search.call_args.kwargs["skip_ids"]
     assert skip_ids == {0, 2, 3, 5, 6, 7, 8, 9}
-    assert result == [4, 1]
+    assert result == [104, 101]
 
 
 def test_no_filters_uses_ann_search_with_seen_and_excluded_skipped(searcher):

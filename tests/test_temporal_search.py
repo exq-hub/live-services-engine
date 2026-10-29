@@ -214,7 +214,11 @@ SEGMENT_ROWS = [
     (31, 200, "Image", 1000, 1000),
 ]
 
-# Score of each index position (equal to its media ID) per query text.
+OFFSETS = {"CLIP": 1000, "Text": 2000}
+"""Media m is at position OFFSETS[index] + m, so a missed or wrong index
+conversion fails a test."""
+
+# Score of each media per query text.
 SCORES = {
     "b": {20: 0.9, 21: 0.5},
     "c": {11: 0.1, 12: 0.8, 13: 0.9, 31: 0.7},
@@ -228,7 +232,10 @@ def _score_subset(collection, query_vectors, candidate_ids, index_name=None):
     ids = np.array(sorted(candidate_ids), dtype=np.int64)
     scores = np.array(
         [
-            [SCORES[QUERY_TEXTS[int(q[0])]].get(int(i), 0.0) for i in ids]
+            [
+                SCORES[QUERY_TEXTS[int(q[0])]].get(int(i) - OFFSETS[index_name], 0.0)
+                for i in ids
+            ]
             for q in query_vectors
         ]
     ).reshape(len(query_vectors), len(ids))
@@ -256,12 +263,13 @@ def strategy():
     text = MagicMock(embedding_type="Text", build_query=_encoder(TEXT_INDEX))
     rf = MagicMock()
     index_repo, database_repo = MagicMock(), MagicMock()
-    # Media IDs and index positions coincide, to keep the pools readable.
     database_repo.get_index_ids.side_effect = (
-        lambda collection, ids, index_name, skip_unmapped=False: list(ids)
+        lambda collection, ids, index_name, skip_unmapped=False: [
+            OFFSETS[index_name] + m for m in ids
+        ]
     )
     database_repo.get_media_ids.side_effect = (
-        lambda collection, ids, index_name: list(ids)
+        lambda collection, ids, index_name: [p - OFFSETS[index_name] for p in ids]
     )
     database_repo.get_group_segment_times.return_value = SEGMENT_ROWS
     index_repo.score_subset.side_effect = _score_subset
@@ -331,7 +339,7 @@ class TestTemporalSearchStrategy:
         )
 
         (call,) = strategy.index_repo.score_subset.call_args_list
-        assert call.args[2] == {20, 21}
+        assert call.args[2] == {2020, 2021}
         assert call.kwargs["index_name"] == "Text"
 
     def test_hops_sharing_an_index_are_scored_together(self, strategy):
@@ -346,7 +354,7 @@ class TestTemporalSearchStrategy:
 
         (call,) = strategy.index_repo.score_subset.call_args_list
         assert call.args[1].shape == (2, 1)
-        assert call.args[2] == {11, 12, 13, 31}
+        assert call.args[2] == {1011, 1012, 1013, 1031}
         assert [c.items for c in chains] == [[10, 11, 13], [30, 31]]
 
     def test_rf_hop_without_positives_fails(self, strategy):

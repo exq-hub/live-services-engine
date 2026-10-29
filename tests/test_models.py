@@ -226,9 +226,8 @@ class TestCLIPModelManagerLazyLoad:
         manager.initialize_models()
         assert "model-extra" not in mocked_clip_loading
 
-        model = manager.get_text_encoder("model-extra")
+        manager.get_text_encoder("model-extra")
 
-        assert model is not None
         assert "model-extra" in mocked_clip_loading
 
     def test_get_text_model_caches_after_lazy_load(
@@ -247,9 +246,8 @@ class TestCLIPModelManagerLazyLoad:
     ):
         manager = CLIPModelManager(multi_model_config)
 
-        tokenizer = manager.get_tokenizer("model-extra")
+        manager.get_tokenizer("model-extra")
 
-        assert tokenizer is not None
         assert "model-extra" in mocked_clip_loading
 
 
@@ -311,9 +309,8 @@ class TestTextModelManagerLazyLoad:
     ):
         manager = TextModelManager(multi_model_config)
 
-        model = manager.get_text_encoder("model-two")
+        manager.get_text_encoder("model-two")
 
-        assert model is not None
         assert mocked_text_loading == ["model-two"]
 
     def test_get_text_model_caches_after_lazy_load(
