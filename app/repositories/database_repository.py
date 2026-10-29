@@ -44,7 +44,7 @@ for it (or eagerly too, for a `preload_all_indexes` collection).
 
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.repositories import db_helper
 from app.schemas import ActiveFilters
@@ -91,9 +91,6 @@ class DatabaseRepository:
             str, Dict[str, Dict[int, int]]
         ] = {}
         """Reverse mapping: ``collection -> index_name -> media_id -> index_id``."""
-
-        self._group_media_ids: Dict[str, Set[int]] = {}
-        """Per-collection ids of the medias that represent a group (e.g., a video)."""
 
         self._tagtype_cache: Dict[str, Dict[int, str]] = {}
         """Per-collection tag-type lookup: ``collection -> tagtype_id -> tagtype_name``."""
@@ -157,14 +154,6 @@ class DatabaseRepository:
                 self._tagtype_cache[collection] = {row[0]: row[1] for row in rows}
             self._item_datapoint_mapping_cache[collection] = {}
             self._rev_item_datapoint_mapping_cache[collection] = {}
-            self._group_media_ids[collection] = set([
-                row[0] for row in self._db_connection[collection]
-                .execute(
-                    """
-                    SELECT id FROM medias WHERE group_id IS NULL
-                    """
-                ).fetchall()
-            ])
 
             collection_config = self.config.collection_configs[collection]
             default_index = collection_config.default_index
@@ -618,7 +607,7 @@ class DatabaseRepository:
             )
 
             # Anchors can exceed the SQLite parameter limit, so they go in a
-            # temp table on a dedicated connection, as in get_filtered_media_ids
+            # temp table on a dedicated connection, as in get_items
             batch_conn = sqlite3.connect(self._db_path[collection], autocommit=False)
             batch_conn.execute(
                 "CREATE TEMPORARY TABLE temp_anchor (id INTEGER PRIMARY KEY)"
@@ -847,14 +836,18 @@ class DatabaseRepository:
                 f"Failed to get total items for collection {collection}: {e}"
             )
 
-    def get_filtered_media_ids(self, collection: str, filters: ActiveFilters) -> set:
-        """Retrieve item IDs that pass the specified active filters.
+    def get_filtered_media_ids(self, collection: str, filters: ActiveFilters) -> List[int]:
+        """Retrieve the IDs of the media that pass the specified active filters.
+
+        A media passes on its own tags and the tags of its groups, as
+        described in `db_helper`. Groups that pass are included, so callers
+        keep the media of their index with `get_index_ids`.
 
         Args:
             collection: Name of the collection
             filters: ActiveFilters object specifying filter criteria
         Returns:
-            Set of item IDs that pass the filters
+            IDs of the media that pass the filters, in no particular order
         """
         cursor = None
         try:
@@ -862,38 +855,7 @@ class DatabaseRepository:
                 active=filters, tagtype_map=self._tagtype_cache[collection]
             )
             cursor = self._db_connection[collection].cursor()
-            passed_ids: Set[int] = {r[0] for r in cursor.execute(query, params).fetchall()}
-            group_ids = passed_ids & self._group_media_ids.get(collection, set())
-            group_medias = set()
-            if len(group_ids) > self._sqlite_limit:
-                # Use a dedicated connection so the temp table stays off the shared one.
-                # With autocommit=False the transaction is already open on connect, and
-                # closing the connection rolls it back and discards the temp table
-                batch_conn = sqlite3.connect(self._db_path[collection], autocommit=False)
-                try:
-                    batch_conn.execute("CREATE TEMPORARY TABLE temp_passed_gid (id INTEGER PRIMARY KEY)")
-                    batch_conn.executemany("INSERT INTO temp_passed_gid (id) VALUES (?)", [(gid,) for gid in group_ids])
-                    group_medias = batch_conn.execute(
-                        """
-                        SELECT id
-                        FROM medias m
-                        WHERE m.group_id IN (SELECT id FROM temp_passed_gid)
-                        """
-                    ).fetchall()
-                finally:
-                    batch_conn.close()
-            else:
-                group_medias = cursor.execute(
-                    f"""
-                    SELECT id
-                    FROM medias m
-                    WHERE m.group_id IN ({",".join(["?"] * len(group_ids))})
-                    """,
-                    list(group_ids)
-                ).fetchall()
-            group_medias = set([r[0] for r in group_medias])
-            passed_none_group_ids = list((passed_ids - group_ids) | group_medias)
-            return list(passed_none_group_ids)
+            return [r[0] for r in cursor.execute(query, params).fetchall()]
         except Exception as e:
             raise DatabaseError(
                 f"Failed to retrieve filtered item IDs from {collection}: {e}"

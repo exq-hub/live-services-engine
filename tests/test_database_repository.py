@@ -34,7 +34,14 @@ import pytest
 from app.core.config import ConfigManager
 from app.core.exceptions import DatabaseError
 from app.repositories.database_repository import DatabaseRepository
-from app.schemas import ActiveFilters, DBFilter, DBValueConstraint, FilterLeaf
+from app.schemas import (
+    ActiveFilters,
+    DBFilter,
+    DBRangeConstraint,
+    DBValueConstraint,
+    FilterGroup,
+    FilterLeaf,
+)
 
 from .conftest import collection_toml, index_toml
 
@@ -525,18 +532,8 @@ class TestGroupMediaIdsPerCollection:
 
         passed = repo.get_filtered_media_ids("testcol", _tag_filter(5000))
 
-        assert sorted(passed) == [10, 11]
-
-    def test_each_collection_keeps_its_own_group_media_ids(
-        self, two_collection_config
-    ):
-        repo = DatabaseRepository(two_collection_config)
-        for name in ("testcol", "othercol"):
-            db_file = two_collection_config.collection_configs[name].database_file
-            repo.load_database(name, db_file)
-
-        assert repo._group_media_ids["testcol"] == {100}
-        assert repo._group_media_ids["othercol"] == {300}
+        # Group 100 passes on its own tag, and media 10 and 11 through group_id 100
+        assert sorted(passed) == [10, 11, 100]
 
 
 @pytest.fixture
