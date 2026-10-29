@@ -20,11 +20,13 @@ Unlike the CLIP and RF strategies, this strategy performs no vector
 similarity search at all. It compiles the user's `ActiveFilters` tree into
 a SQL query (via `db_helper.compile_active_filters`), executes it against
 the collection's SQLite database, and returns the first *n* matching media
-IDs. This is useful when the user wants to browse items by metadata
-attributes without providing a text query or relevance feedback.
+IDs of one index, e.g. keyframes and not transcripts. That's `index_name`,
+or the collection's default index without one. This is useful when the
+user wants to browse items by metadata attributes without providing a text
+query or relevance feedback.
 """
 
-from typing import List
+from typing import List, Optional
 
 from app.repositories.database_repository import DatabaseRepository
 
@@ -50,11 +52,18 @@ class FacetedSearchStrategy(FacetedSearchStrategyABC):
         collection: str,
         n: int,
         filters: ActiveFilters,
+        index_name: Optional[str] = None,
     ) -> List[int]:
         """Execute faceted search using filters."""
         try:
             passed_ids = self.metadata_repo.get_filtered_media_ids(collection, filters)
-            return passed_ids[:n]
+            # Keep only the media this index maps, e.g. keyframes and not transcripts
+            index_ids = self.metadata_repo.get_index_ids(
+                collection, passed_ids, index_name, skip_unmapped=True
+            )
+            return self.metadata_repo.get_media_ids(
+                collection, index_ids[:n], index_name
+            )
 
         except Exception as e:
             raise SearchError(

@@ -171,6 +171,7 @@ class FacetedSearchStrategyABC(SearchStrategy):
         collection: str,
         filters: ActiveFilters,
         n: int,
+        index_name: Optional[str] = None,
     ) -> List[int]:
         """Execute a relevance feedback search and return matching item indices.
 
@@ -178,6 +179,8 @@ class FacetedSearchStrategyABC(SearchStrategy):
             collection: Name of the data collection to search
             n: Maximum number of results to return
             filters: Optional filters to apply to the search
+            index_name: Which index's media to return, defaulting to the
+                collection's default index
 
         Returns:
             List of item indices matching the relevance feedback criteria

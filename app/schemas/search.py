@@ -118,6 +118,7 @@ class FacetedSearchRequest(BaseModel):
         n: Number of results to return
         filters: Active filters to apply
         session_info: Session context information
+        index_name: Optional index whose media to return
     """
 
     n: int
@@ -128,6 +129,11 @@ class FacetedSearchRequest(BaseModel):
 
     session_info: SessionInfo
     """Session context (session ID, collection, model ID)."""
+
+    index_name: Optional[str] = None
+    """Which of the collection's indexes to return media of, e.g. keyframes
+    rather than transcripts. Omitted, it falls back to the collection's
+    default index."""
 
 
 class AggregationSearchRequest(BaseModel):
