@@ -25,16 +25,53 @@ NOT) and `FilterLeaf` nodes.  Each leaf carries a `DBFilter` with either a
 `DBValueConstraint` (match tag IDs with ANY/ALL semantics) or a
 `DBRangeConstraint` (numeric BETWEEN).
 
-The compiler walks the tree recursively, emitting SQL fragments and
-collecting bind parameters, then wraps the result in a ``SELECT ... GROUP BY
-... HAVING`` query over the ``taggings`` table.
+The compiler walks the tree recursively and builds one query, here for
+"Category is documentary or travel AND Start (ms) is from 5000 to 60000"::
 
-Example generated SQL::
+    WITH RECURSIVE
+    -- One row per media that itself has a tag of some leaf. lN is 1 when it
+    -- has a tag of leaf N. A leaf with operator AND gets one lN per tag.
+    f AS (
+        SELECT media_id,
+               MAX(CASE WHEN flag = 0 THEN 1 ELSE 0 END) AS l0,
+               MAX(CASE WHEN flag = 1 THEN 1 ELSE 0 END) AS l1
+        FROM (
+            -- Leaf 0, Category is documentary or travel
+            SELECT x.media_id, 0 AS flag FROM taggings x WHERE x.tag_id IN (?,?)
+            UNION ALL
+            -- Leaf 1, Start (ms) from 5000 to 60000, through its tag type's table
+            SELECT x.media_id, 1 AS flag FROM taggings x
+            JOIN numerical_int_tags r ON r.id = x.tag_id
+            WHERE r.tagset_id = ? AND r.value BETWEEN ? AND ?
+        )
+        GROUP BY media_id
+    ),
+    -- Hands the flags down through group_id. A row means media_id gets the
+    -- flags of source_id, which is depth groups above it.
+    down (media_id, source_id, depth) AS (
+        SELECT media_id, media_id, 0 FROM f
+        UNION ALL
+        SELECT ch.id, d.source_id, d.depth + 1
+        FROM down d
+        JOIN medias ch ON ch.group_id = d.media_id
+        -- A generous ceiling, which also stops group_id cycles
+        WHERE d.depth < 4
+    ),
+    -- Per media, its own flags and its groups' flags combined
+    flags AS (
+        SELECT d.media_id, MAX(f.l0) AS l0, MAX(f.l1) AS l1
+        FROM down d
+        JOIN f ON f.media_id = d.source_id
+        GROUP BY d.media_id
+    )
+    SELECT m.id
+    FROM medias m
+    -- A media without any flag still counts, with every flag 0, so NOT works
+    LEFT JOIN flags fl ON fl.media_id = m.id
+    WHERE (COALESCE(fl.l0, 0) = 1) AND (COALESCE(fl.l1, 0) = 1)
 
-    SELECT tgs.media_id
-    FROM taggings AS tgs
-    GROUP BY tgs.media_id
-    HAVING (SUM(CASE WHEN tgs.tag_id IN (?,?) THEN 1 ELSE 0 END) > 0)
+Groups that pass are returned too. Callers keep the media of their index
+with ``get_index_ids``.
 """
 
 from typing import Any, Dict, List, Tuple, Union, Optional
@@ -63,24 +100,48 @@ def compile_active_filters(
     Returns (sql, params) for querying media_ids matching the filter expression
     """
 
-    # --- helper functions for compiling constraints ---
-    def emit_value_any(tag_ids: List[int], negated: bool) -> Tuple[str, List[Any]]:
-        if not tag_ids:
-            # ANY with empty list: normally false; negated => true
-            return ("1=1" if negated else "0=1", [])
-        ph = placeholders(len(tag_ids))
-        expr = f"SUM(CASE WHEN tgs.tag_id IN ({ph}) THEN 1 ELSE 0 END) {'=' if negated else '>'} 0"
-        return expr, tag_ids
+    # Flags, one per leaf or one per tag of a leaf with operator AND
+    flag_selects: List[str] = []
+    flag_params: List[Any] = []
 
-    def emit_value_all(tag_ids: List[int], negated: bool) -> Tuple[str, List[Any]]:
+    def add_flag(join: str, where: str, p: List[Any]) -> str:
+        """Add one UNION ALL branch to `f` and return the SQL of its flag.
+
+        Args:
+            join: Join to the tag table of a range leaf, or "" for a list of tag IDs
+            where: Condition on the taggings `x`, e.g. "x.tag_id IN (?,?)"
+            p: Bind parameters of `where`
+
+        Returns:
+            `COALESCE(fl.lN, 0)`, where N is this flag's number. It is 1 when the
+            media or one of its groups has a matching tag, else 0.
+        """
+        k = len(flag_selects)
+        flag_selects.append(
+            f"SELECT x.media_id, {k} AS flag FROM taggings x {join} WHERE {where}"
+        )
+        flag_params.extend(p)
+        return f"COALESCE(fl.l{k}, 0)"
+
+    # --- helper functions for compiling constraints ---
+    def emit_value_any(tag_ids: List[int], negated: bool) -> str:
         if not tag_ids:
-            # ALL with empty list: vacuously true; negated => false
-            return ("0=1" if negated else "1=1", [])
+            # An empty tag list matches nothing, so NOT of it matches everything
+            return "1=1" if negated else "0=1"
         ph = placeholders(len(tag_ids))
-        needed = len(tag_ids)
-        op = "<" if negated else "="
-        expr = f"COUNT(DISTINCT CASE WHEN tgs.tag_id IN ({ph}) THEN tgs.tag_id END) {op} {needed}"
-        return expr, tag_ids
+        flag = add_flag("", f"x.tag_id IN ({ph})", tag_ids)
+        return f"{flag} = {0 if negated else 1}"
+
+    def emit_value_all(tag_ids: List[int], negated: bool) -> str:
+        if not tag_ids:
+            # Requiring every tag of an empty list matches everything, so NOT of
+            # it matches nothing
+            return "0=1" if negated else "1=1"
+        # One flag per tag, so a media can have some of the tags itself and
+        # the others through one of its groups
+        flags = [add_flag("", "x.tag_id = ?", [tag_id]) for tag_id in tag_ids]
+        expr = " AND ".join(f"{flag} = 1" for flag in flags)
+        return f"NOT ({expr})" if negated else expr
 
     def emit_range_exists(
         filter_id: int,  # tagset_id
@@ -88,7 +149,7 @@ def compile_active_filters(
         lower: Optional[Union[int, float, str]],
         upper: Optional[Union[int, float, str]],
         negated: bool,
-    ) -> Tuple[str, List[Any]]:
+    ) -> str:
         where_parts = ["r.tagset_id = ?"]
         p: List[Any] = [filter_id]
 
@@ -106,17 +167,14 @@ def compile_active_filters(
             # No bounds means "any value in this set"; keep just the set_id check.
             pass
 
-        sub = f"""
-            tgs.media_id {"NOT IN" if negated else "IN"} (
-                SELECT x.media_id
-                FROM taggings x
-                JOIN {tagtype_map[tagtype_id]}_tags r ON r.id = x.tag_id
-                WHERE {" AND ".join(where_parts)}
-            )
-            """
-        return sub, p
+        flag = add_flag(
+            f"JOIN {tagtype_map[tagtype_id]}_tags r ON r.id = x.tag_id",
+            " AND ".join(where_parts),
+            p,
+        )
+        return f"{flag} = {0 if negated else 1}"
 
-    def compile_leaf(leaf: FilterLeaf) -> Tuple[str, List[Any]]:
+    def compile_leaf(leaf: FilterLeaf) -> str:
         f = leaf.filter
         fid = f.id
         tagtype = f.tagtype_id
@@ -141,19 +199,16 @@ def compile_active_filters(
             )
         raise ValueError("Unrecognized constraint shape")
 
-    def compile_group(group: FilterGroup) -> Tuple[str, List[Any]]:
+    def compile_group(group: FilterGroup) -> str:
         op = group.operator  # "AND" | "OR"
         neg = group.not_
         child_sqls: List[str] = []
-        child_params: List[Any] = []
 
         for child in group.children:
-            sql_i, params_i = compile_expr(child)
-            child_sqls.append(f"({sql_i})")
-            child_params.extend(params_i)
+            child_sqls.append(f"({compile_expr(child)})")
 
         if not child_sqls:
-            # No children: identity element (AND -> TRUE, OR -> FALSE)
+            # An empty AND matches everything, and an empty OR matches nothing
             base = "1=1" if op == "AND" else "0=1"
         else:
             joiner = f" {op} "
@@ -161,9 +216,9 @@ def compile_active_filters(
 
         if neg:
             base = f"NOT ({base})"
-        return base, child_params
+        return base
 
-    def compile_expr(node: FilterExpr) -> Tuple[str, List[Any]]:
+    def compile_expr(node: FilterExpr) -> str:
         if node.kind == "leaf":
             return compile_leaf(node)
         elif node.kind == "group":
@@ -173,14 +228,41 @@ def compile_active_filters(
 
     # --- build final SQL query text ---
 
-    expr_sql, expr_params = compile_expr(active.root)
-    params: List[Any] = []
-    params.extend(expr_params)
+    expr_sql = compile_expr(active.root)
 
-    sql = (
-        "SELECT tgs.media_id\n"
-        "FROM taggings AS tgs\n"
-        "GROUP BY tgs.media_id\n"
-        f"HAVING {expr_sql}"
+    if not flag_selects:
+        # No flags, e.g. every leaf has an empty tag list, so the tree is a constant
+        return f"SELECT m.id FROM medias m WHERE {expr_sql}", []
+
+    flag_numbers = range(len(flag_selects))
+    own = ", ".join(
+        f"MAX(CASE WHEN flag = {k} THEN 1 ELSE 0 END) AS l{k}" for k in flag_numbers
     )
-    return sql, params
+    combined = ", ".join(f"MAX(f.l{k}) AS l{k}" for k in flag_numbers)
+    sql = f"""
+        WITH RECURSIVE
+        f AS (
+            SELECT media_id, {own}
+            FROM ({" UNION ALL ".join(flag_selects)})
+            GROUP BY media_id
+        ),
+        down (media_id, source_id, depth) AS (
+            SELECT media_id, media_id, 0 FROM f
+            UNION ALL
+            SELECT ch.id, d.source_id, d.depth + 1
+            FROM down d
+            JOIN medias ch ON ch.group_id = d.media_id
+            WHERE d.depth < 4
+        ),
+        flags AS (
+            SELECT d.media_id, {combined}
+            FROM down d
+            JOIN f ON f.media_id = d.source_id
+            GROUP BY d.media_id
+        )
+        SELECT m.id
+        FROM medias m
+        LEFT JOIN flags fl ON fl.media_id = m.id
+        WHERE {expr_sql}
+        """
+    return sql, flag_params
