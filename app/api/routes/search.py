@@ -238,6 +238,7 @@ async def faceted_search(
             request.session_info.collection,
             {
                 "filters": request.filters.model_dump_json(),
+                "index_name": request.index_name,
                 "n_requested": request.n,
             },
             result["suggestions"],

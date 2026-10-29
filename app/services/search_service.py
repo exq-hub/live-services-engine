@@ -200,6 +200,7 @@ class SearchService:
                 collection=request.session_info.collection,
                 n=request.n,
                 filters=request.filters,
+                index_name=request.index_name,
             )
 
             completion_time = int(time.time()) - start_time
