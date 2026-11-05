@@ -43,7 +43,7 @@ from typing import List, Optional, Tuple
 import numpy as np
 
 from concurrent.futures import ThreadPoolExecutor
-from multiprocessing import cpu_count
+from os import process_cpu_count
 from itertools import repeat
 
 import zarr
@@ -139,9 +139,9 @@ class ZarrIndex(BaseIndex):
     """Brute-force dot-product search over Zarr-stored embeddings.
 
     Unlike FAISS, this does not use an approximate nearest-neighbour
-    structure. Instead, it loads embedding chunks from Zarr storage and
-    computes dot products in parallel using a thread pool. The results
-    are then globally sorted to return the top-*k* items.
+    structure. Instead, it loads embeddings from Zarr storage in batches 
+    and computes dot products in parallel using a thread pool. 
+    The results are then globally sorted to return the top-*k* items.
 
     Supports ``.zarr`` directories, ``.zip`` / ``.zipstore`` archives, and
     Zarr groups containing an ``embeddings`` dataset.
@@ -149,6 +149,7 @@ class ZarrIndex(BaseIndex):
 
     def __init__(self):
         super().__init__()
+        self.batch_size = 500_000
 
     def load_index(self, model_path: Path):
         self.index = open_zarr_array(model_path)
@@ -158,39 +159,36 @@ class ZarrIndex(BaseIndex):
 
     def search(
         self, query: np.ndarray, k: int,
-        skip_ids: Set[int] = frozenset()
+        skip_ids: Set[int] = frozenset(),
     ) -> Tuple[int, List[int], List[float]]:
         if isinstance(query, int):
             raise ValueError("ZarrIndex does not support query by state id.")
 
-        def process_chunk(
+        def process_batch(
             q: np.ndarray,
             start_idx: int,
             end_idx: int,
         ) -> Tuple[np.ndarray, np.ndarray]:
-            embeddings_chunk = self.index[start_idx:end_idx]
-            distances = np.dot(embeddings_chunk, q.T).squeeze()
+            embeddings_batch = self.index[start_idx:end_idx]
+            distances = np.dot(embeddings_batch, q.T).reshape(-1)
             return distances
 
         total_items = self.index.shape[0]
-        # Calculate distances in chunks and keep top k
-        chunk_size = 500_000
-        starts = range(0, total_items, chunk_size)
-        ends = [min(start + chunk_size, total_items) for start in starts]
-        results = []
+        # Calculate distances in batches and keep top k
+        starts = range(0, total_items, self.batch_size)
+        ends = [min(start + self.batch_size, total_items) for start in starts]
         mask = np.isin(np.arange(total_items), list(skip_ids), invert=True)
-        with ThreadPoolExecutor(max_workers=cpu_count() - 2) as executor:
-            try:
-                results = list(
-                    executor.map(
-                        process_chunk,
-                        repeat(query),
-                        starts,
-                        ends,
-                    )
+        max_workers = max((process_cpu_count() or 1) - 1, 1)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # A batch that fails re-raises its error here and fails the search
+            results = list(
+                executor.map(
+                    process_batch,
+                    repeat(query),
+                    starts,
+                    ends,
                 )
-            except Exception as e:
-                print(f"Error during parallel search: {e}")
+            )
 
         total_top_dists = np.concatenate(results)
         arg_sorted_dists = np.argsort(total_top_dists)[::-1]
