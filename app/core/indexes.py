@@ -168,7 +168,7 @@ class ZarrIndex(BaseIndex):
             q: np.ndarray,
             start_idx: int,
             end_idx: int,
-        ) -> Tuple[np.ndarray, np.ndarray]:
+        ) -> np.ndarray:
             embeddings_batch = self.index[start_idx:end_idx]
             distances = np.dot(embeddings_batch, q.T).reshape(-1)
             return distances
