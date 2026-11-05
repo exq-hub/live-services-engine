@@ -140,7 +140,7 @@ class ZarrIndex(BaseIndex):
 
     Unlike FAISS, this does not use an approximate nearest-neighbour
     structure. Instead, it loads embeddings from Zarr storage in batches 
-    and computes dot products in parallel using a thread pool. 
+    and computes dot products in parallel using a thread pool.
     The results are then globally sorted to return the top-*k* items.
 
     Supports ``.zarr`` directories, ``.zip`` / ``.zipstore`` archives, and
