@@ -182,9 +182,15 @@ def test_scan_matches_a_sequential_scan_for_any_core_count(
     _assert_matches_a_sequential_scan(index, rows, query, 5)
 
 
-def test_scan_handles_a_last_batch_of_one_row(tmp_path, query):
-    # 10 rows in batches of 3: 3, 3, 3 and 1
-    index, rows = _zarr_index(tmp_path / "embeddings.zarr", 10)
+@pytest.mark.parametrize(
+    "n_rows",
+    [
+        10,  # batches of 3, 3, 3 and 1
+        1,  # a single batch of 1
+    ],
+)
+def test_scan_handles_a_last_batch_of_one_row(tmp_path, query, n_rows):
+    index, rows = _zarr_index(tmp_path / "embeddings.zarr", n_rows)
 
     _assert_matches_a_sequential_scan(index, rows, query, 5)
 
