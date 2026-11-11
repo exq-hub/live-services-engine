@@ -600,7 +600,7 @@ requires-dist = [
     { name = "ipython", specifier = ">=9.2.0" },
     { name = "msgpack", specifier = ">=1.1.0" },
     { name = "ollama", specifier = ">=0.4.8" },
-    { name = "open-clip-torch", specifier = ">=2.32.0" },
+    { name = "open-clip-torch", specifier = ">=3.0.0" },
     { name = "orjson", specifier = ">=3.10.18" },
     { name = "pandas", specifier = ">=2.3.3" },
     { name = "pdoc", specifier = ">=16.0.0" },
