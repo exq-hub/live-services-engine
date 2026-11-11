@@ -233,11 +233,13 @@ class CLIPModelManager(ModelManager):
 
             if not cache_path.exists():
                 logger.info(f"{model_name} not found locally, downloading...")
+                # Fail rather than load random weights when an hf-hub:/local-dir: model has no weights file.
                 model = open_clip.create_model(
                     model_name,
                     pretrained="webli",
                     precision="fp16",
                     device=self.device,
+                    require_pretrained=True,
                 )
                 text_model = model.text
                 cache_path.parent.mkdir(parents=True, exist_ok=True)
