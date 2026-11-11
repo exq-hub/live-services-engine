@@ -75,6 +75,12 @@ class BaseIndex(ABC):
         """Load the data model from the given path"""
         pass
 
+    @property
+    @abstractmethod
+    def dim(self) -> int:
+        """Number of dimensions of the vectors in the loaded index."""
+        pass
+
     @abstractmethod
     def search(
         self, query: np.ndarray | int, k: int,
@@ -157,6 +163,10 @@ class ZarrIndex(BaseIndex):
         if isinstance(self.index, zarr.Group):
             self.index = self.index["embeddings"]
 
+    @property
+    def dim(self) -> int:
+        return self.index.shape[1]
+
     def search(
         self, query: np.ndarray, k: int,
         skip_ids: Set[int] = frozenset(),
@@ -238,6 +248,10 @@ class FaissIndex(BaseIndex):
                 self.index.hnsw.efSearch = (
                     100  # set a reasonable default since faiss default is 16
                 )
+
+    @property
+    def dim(self) -> int:
+        return self.index.d
 
     def search(
         self, query: np.ndarray, k: int, skip_ids: Set[int] = frozenset()

@@ -85,6 +85,23 @@ class IndexRepository:
         except ValueError as e:
             raise IndexError(f"{e} (collection {collection!r})")
 
+    def _check_query_dim(
+        self, collection: str, index_name: str, query_dim: int, index_dim: int
+    ) -> None:
+        """Raise a readable error when a query vector doesn't fit the index.
+
+        This happens when model_name in the config isn't the model that
+        produced the index's embeddings.
+        """
+        if query_dim == index_dim:
+            return
+        model_name = self._get_index_config(collection, index_name).model_name
+        raise IndexError(
+            f"The query has {query_dim} dimensions, but index {index_name!r} in "
+            f"collection {collection!r} has {index_dim}. Check that model_name "
+            f"{model_name!r} is the model that produced this index's embeddings."
+        )
+
     def get_index(
         self, collection: str, index_name: Optional[str] = None
     ) -> BaseIndex:
@@ -166,6 +183,7 @@ class IndexRepository:
         """Search the ANN index for collection/index_name."""
         index_name = self._resolve_index_name(collection, index_name)
         index = self.get_index(collection, index_name)
+        self._check_query_dim(collection, index_name, query_vector.shape[-1], index.dim)
 
         try:
             _, indices, distances = index.search(query_vector, k, skip_ids=skip_ids)
@@ -234,6 +252,7 @@ class IndexRepository:
 
         index_name = self._resolve_index_name(collection, index_name)
         emb_arr = self.get_embeddings_array(collection, index_name)
+        self._check_query_dim(collection, index_name, queries.shape[-1], emb_arr.shape[1])
 
         try:
             # Sorted so the orthogonal selection reads chunks in order
