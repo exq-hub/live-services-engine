@@ -27,11 +27,13 @@ these tests are about the model-name bookkeeping, family filtering, and
 eager-vs-lazy scoping, not about actually downloading or running a model.
 """
 
+import json
 from unittest.mock import MagicMock
 
 import pytest
 
 from app.core.config import ConfigManager
+from app.core.exceptions import ModelLoadError
 from app.core.models import CLIPModelManager, TextModelManager
 
 from .conftest import collection_toml, index_toml
@@ -266,6 +268,62 @@ class TestCLIPModelManagerLazyLoad:
         manager.get_tokenizer("model-extra")
 
         assert "model-extra" in mocked_clip_loading
+
+
+class TestCLIPModelManagerRequiresPretrainedWeights:
+    def test_local_dir_model_without_weights_fails_and_caches_nothing(
+        self, multi_model_config, monkeypatch, tmp_path
+    ):
+        """Real open_clip, offline: a local-dir: model whose folder has a config
+        but no weights file would otherwise load with random weights."""
+        model_dir = tmp_path / "tiny-clip"
+        model_dir.mkdir()
+        # Smallest config open_clip accepts; custom_text gives the model the
+        # .text tower the LSE extracts
+        (model_dir / "open_clip_config.json").write_text(
+            json.dumps(
+                {
+                    "model_cfg": {
+                        "embed_dim": 8,
+                        "custom_text": True,
+                        "vision_cfg": {
+                            "image_size": 32,
+                            "layers": 1,
+                            "width": 32,
+                            "head_width": 32,
+                            "patch_size": 16,
+                        },
+                        "text_cfg": {
+                            "context_length": 8,
+                            "vocab_size": 64,
+                            "width": 32,
+                            "heads": 1,
+                            "layers": 1,
+                        },
+                    }
+                }
+            )
+        )
+        # Keep both caches in tmp_path, even if the load wrongly succeeds
+        cache_path = tmp_path / "cache" / "tiny-clip_text.pth"
+        monkeypatch.setattr(
+            CLIPModelManager,
+            "_text_encoder_cache_path",
+            staticmethod(lambda _name: cache_path),
+        )
+        monkeypatch.setattr(
+            CLIPModelManager,
+            "_tokenizer_cache_path",
+            staticmethod(lambda _name: tmp_path / "cache" / "tiny-clip_tokenizer.pth"),
+        )
+        model_name = f"local-dir:{model_dir}"
+        manager = CLIPModelManager(multi_model_config)
+
+        with pytest.raises(ModelLoadError, match="pretrained weights"):
+            manager.get_text_encoder(model_name)
+
+        assert not cache_path.exists()
+        assert manager.loaded_model_names() == []
 
 
 class TestCLIPModelManagerCachePath:
