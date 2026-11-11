@@ -280,15 +280,20 @@ class CLIPModelManager(ModelManager):
 
     @staticmethod
     def _text_encoder_cache_path(model_name: str) -> Path:
-        """On-disk cache path for the extracted text tower of `model_name`."""
+        """On-disk cache path for the extracted text tower of `model_name`.
+
+        The file is a pickled open_clip module, which can break under another
+        open_clip version, so the name includes the version and an upgrade
+        rebuilds the cache.
+        """
         safe_name = model_name.replace("/", "_")
-        return Path(f"./data/models/{safe_name}_text.pth")
+        return Path(f"./data/models/{safe_name}_text_open_clip-{open_clip.__version__}.pth")
 
     @staticmethod
     def _tokenizer_cache_path(model_name: str) -> Path:
-        """On-disk cache path for the tokenizer of `model_name`."""
+        """On-disk cache path for the tokenizer of `model_name`, versioned like the text tower's."""
         safe_name = model_name.replace("/", "_")
-        return Path(f"./data/tokenizers/{safe_name}.pth")
+        return Path(f"./data/tokenizers/{safe_name}_open_clip-{open_clip.__version__}.pth")
 
 
 class TextModelManager(ModelManager):

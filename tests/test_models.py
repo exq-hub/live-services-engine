@@ -350,6 +350,21 @@ class TestCLIPModelManagerCachePath:
         tokenizer_path = CLIPModelManager._tokenizer_cache_path("model-one")
         assert text_path != tokenizer_path
 
+    def test_cache_paths_change_with_the_open_clip_version(self, monkeypatch):
+        monkeypatch.setattr("app.core.models.open_clip.__version__", "3.3.0")
+        old = (
+            CLIPModelManager._text_encoder_cache_path("model-one"),
+            CLIPModelManager._tokenizer_cache_path("model-one"),
+        )
+        monkeypatch.setattr("app.core.models.open_clip.__version__", "4.2.2")
+        new = (
+            CLIPModelManager._text_encoder_cache_path("model-one"),
+            CLIPModelManager._tokenizer_cache_path("model-one"),
+        )
+
+        assert old[0] != new[0]
+        assert old[1] != new[1]
+
 
 class TestTextModelManagerInitialize:
     def test_preloads_only_preload_all_indexes(
