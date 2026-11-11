@@ -260,11 +260,12 @@ class TemporalSearchStrategy(VectorSearchMixin, TemporalSearchStrategyABC):
         self,
         collection: str,
         hop: TemporalHop,
+        hop_number: int,
         seen: List[int],
         excluded: List[int],
         filters: Optional[ActiveFilters],
     ) -> Tuple[IndexConfig, np.ndarray]:
-        """Resolve a hop's index and its query vector."""
+        """Resolve a hop's index and its query vector. hop_number counts from 1, for error messages."""
         if hop.kind == "rf":
             index_config, hyperplane = await self.rf_search.build_query(
                 collection,
@@ -277,7 +278,10 @@ class TemporalSearchStrategy(VectorSearchMixin, TemporalSearchStrategyABC):
                 hop.index_name,
             )
             if hyperplane is None:
-                raise SearchError("RF hop has no positive samples")
+                raise SearchError(
+                    f"Step {hop_number} of the temporal search has no positives, "
+                    f"and its query found no examples with the given filters."
+                )
             return index_config, hyperplane
 
         index_config = self.config.collection_configs[collection].resolve_index(
@@ -307,8 +311,8 @@ class TemporalSearchStrategy(VectorSearchMixin, TemporalSearchStrategyABC):
         try:
             hop_filters = [_combine_filters(filters, hop.filters) for hop in hops]
             queries = [
-                await self._build_hop_query(collection, hop, seen, excluded, f)
-                for hop, f in zip(hops, hop_filters)
+                await self._build_hop_query(collection, hop, number, seen, excluded, f)
+                for number, (hop, f) in enumerate(zip(hops, hop_filters), start=1)
             ]
             excluded_set = self._build_excluded_set(collection, excluded)
 
