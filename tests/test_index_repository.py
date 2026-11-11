@@ -28,6 +28,7 @@ since ZarrIndex.load_index actually opens and reads them.
 
 from pathlib import Path
 
+import faiss
 import numpy as np
 import pytest
 import zarr
@@ -243,3 +244,70 @@ class TestClearCache:
 
         assert repo._indices == {}
         assert repo._embeddings_zarr == {}
+
+
+@pytest.fixture
+def zarr_and_faiss_config(write_config, dummy_files, tmp_path):
+    """One collection with a 3-d zarr index and a 3-d faiss index, each with its own model_name."""
+    store = _make_zarr_store(tmp_path / "embeddings.zarr")
+    faiss_index = faiss.IndexFlatIP(3)
+    faiss_index.add(np.arange(12, dtype="f4").reshape(4, 3))
+    faiss_file = str(tmp_path / "index.faiss")
+    faiss.write_index(faiss_index, faiss_file)
+
+    indexes = "\n".join(
+        [
+            index_toml(
+                name="zarr_idx",
+                index_type="zarr",
+                embeddings_file=store,
+                model_name="zarr-model",
+                default=True,
+            ),
+            index_toml(
+                name="faiss_idx",
+                index_type="faiss",
+                index_file=faiss_file,
+                embeddings_file=store,
+                model_name="faiss-model",
+            ),
+        ]
+    )
+    collection = collection_toml(
+        name="testcol",
+        database_file=dummy_files["database_file"],
+        thumbnail_media_url="https://localhost:5000/testcol",
+        original_media_url="https://localhost:5000/testcol",
+        indexes=indexes,
+    )
+    path = write_config(collection)
+    return ConfigManager(str(path)).load_config()
+
+
+class TestQueryDimensionMismatch:
+    wrong_size_query = np.array([[1.0, 0.0]], dtype="f4")
+
+    @pytest.mark.parametrize(
+        "index_name, model_name", [("zarr_idx", "zarr-model"), ("faiss_idx", "faiss-model")]
+    )
+    def test_search_names_the_index_model(
+        self, zarr_and_faiss_config, index_name, model_name
+    ):
+        repo = IndexRepository(zarr_and_faiss_config)
+
+        with pytest.raises(IndexError, match=f"has 3.*model_name '{model_name}'"):
+            repo.search("testcol", self.wrong_size_query, 2, index_name=index_name)
+
+    def test_search_subset_names_the_index_model(self, zarr_and_faiss_config):
+        repo = IndexRepository(zarr_and_faiss_config)
+
+        with pytest.raises(IndexError, match="has 3.*model_name 'zarr-model'"):
+            repo.search_subset("testcol", self.wrong_size_query, 2, {0, 1})
+
+    def test_a_query_of_the_right_size_still_searches(self, zarr_and_faiss_config):
+        repo = IndexRepository(zarr_and_faiss_config)
+        query = np.array([[1.0, 0.0, 0.0]], dtype="f4")
+
+        indices, _ = repo.search("testcol", query, 2, index_name="faiss_idx")
+
+        assert indices == [3, 2]
