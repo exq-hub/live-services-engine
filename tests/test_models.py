@@ -319,7 +319,7 @@ class TestCLIPModelManagerRequiresPretrainedWeights:
         model_name = f"local-dir:{model_dir}"
         manager = CLIPModelManager(multi_model_config)
 
-        with pytest.raises(ModelLoadError, match="pretrained weights"):
+        with pytest.raises(ModelLoadError, match="^Failed to load CLIP text model"):
             manager.get_text_encoder(model_name)
 
         assert not cache_path.exists()
