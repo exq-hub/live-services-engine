@@ -357,10 +357,21 @@ class TestTemporalSearchStrategy:
         assert call.args[2] == {1011, 1012, 1013, 1031}
         assert [c.items for c in chains] == [[10, 11, 13], [30, 31]]
 
-    def test_rf_hop_without_positives_fails(self, strategy):
+    def test_rf_hop_without_positives_fails_naming_the_step(self, strategy):
         strategy.rf_search.build_query = AsyncMock(return_value=(CLIP_INDEX, None))
-        with pytest.raises(SearchError):
+        with pytest.raises(SearchError, match="Step 1 of the temporal search has no positives"):
             _search(strategy, [RFHop(kind="rf")])
+
+    def test_later_rf_hop_without_positives_names_its_step(self, strategy):
+        strategy.rf_search.build_query = AsyncMock(return_value=(TEXT_INDEX, None))
+        with pytest.raises(SearchError, match="Step 2 of the temporal search has no positives"):
+            _search(
+                strategy,
+                [
+                    QueryHop(kind="query", text="a"),
+                    RFHop(kind="rf", index_name="Text"),
+                ],
+            )
 
     def test_no_anchors_returns_nothing(self, strategy):
         strategy._search_with_expansion = AsyncMock(return_value=[])
