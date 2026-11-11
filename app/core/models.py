@@ -49,7 +49,7 @@ import time
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
-from typing import Any, ClassVar, Dict, Optional, Set
+from typing import Any, ClassVar, Dict, List, Optional, Set
 
 import torch
 import open_clip
@@ -155,6 +155,10 @@ class ModelManager(ABC):
                 self._after_load_text_encoder(model_name)
                 self._text_encoders[model_name] = text_encoder
         return self._text_encoders[model_name]
+
+    def loaded_model_names(self) -> List[str]:
+        """Names of the encoders loaded so far, sorted. Lazily loaded ones appear after first use."""
+        return sorted(self._text_encoders)
 
     def initialize_models(self) -> None:
         """Eagerly load this family's encoders for indexes that should preload at startup.

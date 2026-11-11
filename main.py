@@ -49,6 +49,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app import __version__
 from app.core.models import container, ApplicationContainer
 from app.core.exceptions import LSEException, ConfigurationError
 from app.api.routes import search, items, admin
@@ -109,7 +110,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Live Services Engine",
     description="The Live Service Engine handles execution and logging of search requests within Exquisitor.",
-    version="0.2.0",
+    version=__version__,
     lifespan=lifespan,
 )
 """FastAPI application instance for the Live Services Engine."""
@@ -191,10 +192,14 @@ async def health_check():
 
         return {
             "status": "healthy",
-            "version": "0.2.0",
+            "version": __version__,
             "collections": collections,
             "models_loaded": {
-                "clip": True,
+                manager.embedding_type: manager.loaded_model_names()
+                for manager in (
+                    container.clip_model_manager,
+                    container.text_model_manager,
+                )
             },
         }
 
@@ -209,7 +214,7 @@ async def root():
     """Root endpoint with API information."""
     return {
         "name": "Live Services Engine",
-        "version": "0.2.0",
+        "version": __version__,
         "description": "The Live Service Engine handles execution and logging of search requests within Exquisitor.",
         "endpoints": {
             "health": "/health",
