@@ -241,6 +241,7 @@ async def log_client_event(
             action=f"Client Event: {event.action}",
             session=event.session,
             data={
+                "ts": event.ts,
                 "element_id": event.element_id,
                 "route": event.route,
                 "body": event.data,

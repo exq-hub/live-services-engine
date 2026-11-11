@@ -39,7 +39,7 @@ class ClientEventRequest(BaseModel):
     """
 
     ts: float
-    """Timestamp of the event (Unix epoch seconds)."""
+    """Time of the event on the client, in milliseconds since the Unix epoch (JavaScript ``Date.now()``)."""
 
     action: str
     """Description of the action taken by the user (e.g. ``'click'``, ``'scroll'``)."""
