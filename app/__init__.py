@@ -37,5 +37,25 @@ services
 strategies
     Pluggable search algorithm implementations (CLIP text search, relevance
     feedback via SVM, faceted/filter-based search).
-
 """
+
+import tomllib
+from pathlib import Path
+
+
+def _read_version() -> str:
+    """Read the version from pyproject.toml, the single place it is set.
+
+    The LSE runs from its source tree rather than as an installed
+    package, so importlib.metadata has no version to report.
+    """
+    try:
+        pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+        with pyproject.open("rb") as f:
+            return tomllib.load(f)["project"]["version"]
+    except (OSError, KeyError, tomllib.TOMLDecodeError):
+        return "unknown"
+
+
+__version__ = _read_version()
+"""LSE version, read from pyproject.toml."""

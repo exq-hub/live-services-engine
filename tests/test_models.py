@@ -241,6 +241,23 @@ class TestCLIPModelManagerLazyLoad:
         assert first is second
         assert mocked_clip_loading.count("model-extra") == 1
 
+    def test_loaded_model_names_lists_preloaded_then_lazily_loaded_models(
+        self, multi_model_config, mocked_clip_loading
+    ):
+        manager = CLIPModelManager(multi_model_config)
+        assert manager.loaded_model_names() == []
+
+        manager.initialize_models()
+        assert manager.loaded_model_names() == [
+            "ViT-SO400M-14-SigLIP-384",
+            "model-one",
+            "model-preload-a",
+            "model-preload-b",
+        ]
+
+        manager.get_text_encoder("model-extra")
+        assert "model-extra" in manager.loaded_model_names()
+
     def test_get_text_tokenizer_lazily_loads_alongside_the_model(
         self, multi_model_config, mocked_clip_loading
     ):
