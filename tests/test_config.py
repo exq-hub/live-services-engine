@@ -87,6 +87,17 @@ class TestMinimalConfig:
         assert config.log_level == "DEBUG"
         assert config.log_directory == "/var/log/exq/"
 
+    def test_logging_section_without_directory_uses_the_default_directory(
+        self, write_config, minimal_collection_toml
+    ):
+        text = '[logging]\nlevel = "DEBUG"\n\n' + minimal_collection_toml
+        path = write_config(text)
+
+        config = ConfigManager(str(path)).load_config()
+
+        assert config.log_level == "DEBUG"
+        assert config.log_directory == "./logs/"
+
 
 class TestCollectionDiscovery:
     def test_disabled_collection_is_excluded(
