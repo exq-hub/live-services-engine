@@ -28,9 +28,9 @@ requests to the correct one:
 - ``"temporal"`` uses `TemporalSearchStrategy` for ordered sequences of
   text or RF queries matched as chains of segments within a video.
 
-Each search call is timed (wall-clock seconds) and the result dict includes
-``request_timestamp``, ``completion_time``, and ``strategy`` metadata used
-by the route layer for audit logging.
+Each search call is timed and the result dict includes ``request_timestamp``
+(Unix milliseconds), ``completion_time`` (search duration in milliseconds)
+and ``strategy`` metadata used by the route layer for audit logging.
 """
 
 import time
@@ -115,7 +115,8 @@ class SearchService:
         if not isinstance(strategy, TextSearchStrategyABC):
             raise SearchError(f"Strategy {strategy_name} does not support text search")
 
-        start_time = int(time.time())
+        start_time = int(time.time() * 1000)
+        start = time.perf_counter()
 
         try:
             suggestions = await strategy.search(
@@ -128,7 +129,7 @@ class SearchService:
                 index_name=request.index_name,
             )
 
-            completion_time = int(time.time()) - start_time
+            completion_time = round((time.perf_counter() - start) * 1000)
 
             return {
                 "suggestions": suggestions,
@@ -153,7 +154,8 @@ class SearchService:
         if not isinstance(strategy, RFSearchStrategyABC):
             raise SearchError("RF strategy not properly configured")
 
-        start_time = int(time.time())
+        start_time = int(time.time() * 1000)
+        start = time.perf_counter()
 
         try:
             suggestions = await strategy.search(
@@ -168,7 +170,7 @@ class SearchService:
                 index_name=request.index_name,
             )
 
-            completion_time = int(time.time()) - start_time
+            completion_time = round((time.perf_counter() - start) * 1000)
 
             return {
                 "suggestions": suggestions,
@@ -193,7 +195,8 @@ class SearchService:
         if not isinstance(strategy, FacetedSearchStrategyABC):
             raise SearchError("Faceted strategy not properly configured")
 
-        start_time = int(time.time())
+        start_time = int(time.time() * 1000)
+        start = time.perf_counter()
 
         try:
             suggestions = await strategy.search(
@@ -203,7 +206,7 @@ class SearchService:
                 index_name=request.index_name,
             )
 
-            completion_time = int(time.time()) - start_time
+            completion_time = round((time.perf_counter() - start) * 1000)
 
             return {
                 "suggestions": suggestions,
@@ -226,7 +229,8 @@ class SearchService:
         if not isinstance(strategy, TemporalSearchStrategyABC):
             raise SearchError("Temporal strategy not properly configured")
 
-        start_time = int(time.time())
+        start_time = int(time.time() * 1000)
+        start = time.perf_counter()
 
         try:
             chains = await strategy.search(
@@ -242,7 +246,7 @@ class SearchService:
                 iou_threshold=request.iou_threshold,
             )
 
-            completion_time = int(time.time()) - start_time
+            completion_time = round((time.perf_counter() - start) * 1000)
 
             return {
                 "suggestions": chains,
