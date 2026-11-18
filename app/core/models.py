@@ -43,7 +43,9 @@ A module-level ``container`` instance is exported for use throughout the
 application (imported by route dependencies, the lifespan handler, etc.).
 """
 
+import hashlib
 import logging
+import re
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -207,6 +209,24 @@ class ModelManager(ABC):
         ...
 
 
+class OpenCLIPTextEncoder(torch.nn.Module):
+    """The text side of an open_clip model, called like a text tower.
+
+    Classic CLIP models keep their text layers directly on the model, while
+    SigLIP-style models keep them in `model.text`. Both expose `encode_text`,
+    so wrapping the whole model works for either. The image tower is dropped
+    to save memory.
+    """
+
+    def __init__(self, model: torch.nn.Module):
+        super().__init__()
+        model.visual = None
+        self.model = model
+
+    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+        return self.model.encode_text(tokens)
+
+
 class CLIPModelManager(ModelManager):
     """Loads open_clip CLIP text encoders and tokenizers for "CLIP"-type indexes."""
 
@@ -223,6 +243,18 @@ class CLIPModelManager(ModelManager):
         self.get_text_encoder(model_name)
         return self._tokenizers[model_name]
 
+    def initialize_models(self) -> None:
+        """Check every CLIP index's model_name, then preload as usual.
+
+        Lazily loaded models are checked too, so a model_name that needs an
+        hf-hub: name fails at startup instead of on the first search.
+        """
+        for collection_config in self.config.collection_configs.values():
+            for index in collection_config.indexes:
+                if index.embedding_type == self.embedding_type:
+                    self._pretrained_tag(index.model_name)
+        super().initialize_models()
+
     def _after_load_text_encoder(self, model_name: str) -> None:
         self._tokenizers[model_name] = self._load_tokenizer(model_name)
 
@@ -237,12 +269,12 @@ class CLIPModelManager(ModelManager):
                 # Fail rather than load random weights when an hf-hub:/local-dir: model has no weights file.
                 model = open_clip.create_model(
                     model_name,
-                    pretrained="webli",
+                    pretrained=self._pretrained_tag(model_name),
                     precision="fp16",
                     device=self.device,
                     require_pretrained=True,
                 )
-                text_model = model.text
+                text_model = OpenCLIPTextEncoder(model)
                 cache_path.parent.mkdir(parents=True, exist_ok=True)
                 torch.save(text_model, cache_path)
             else:
@@ -280,21 +312,64 @@ class CLIPModelManager(ModelManager):
             )
 
     @staticmethod
+    def _pretrained_tag(model_name: str) -> Optional[str]:
+        """The open_clip pretrained tag to load `model_name` with.
+
+        An hf-hub: or local-dir: name points at one set of weights and needs
+        no tag. A plain open_clip name works only when open_clip lists exactly
+        one set of weights for it, as for SigLIP and SigLIP2. Otherwise the
+        error lists the hf-hub: names that pick one set.
+        """
+        if model_name.startswith(("hf-hub:", "local-dir:")):
+            return None
+
+        tags = open_clip.list_pretrained_tags_by_model(model_name)
+        if len(tags) == 1:
+            return tags[0]
+        if not tags:
+            raise ModelLoadError(
+                f"open_clip has no pretrained weights for {model_name!r}"
+            )
+
+        hub_names = sorted(
+            f"hf-hub:{hub.rstrip('/')}"
+            for tag in tags
+            if (hub := open_clip.get_pretrained_cfg(model_name, tag).get("hf_hub"))
+        )
+        raise ModelLoadError(
+            f"open_clip has several pretrained weights for {model_name!r}. "
+            f"Set model_name to one of: {', '.join(hub_names)}"
+        )
+
+    @staticmethod
+    def _cache_file_stem(model_name: str) -> str:
+        """A cache file name stem for `model_name` that is valid on every OS.
+
+        Characters other than letters, digits, '.', '_' and '-' (such as the
+        ':' of hf-hub: or the '\\' of a Windows local-dir: path) become '_',
+        and the result is cut to 60 characters. A short hash of the full name
+        keeps apart names that clean up to the same text.
+        """
+        readable = re.sub(r"[^A-Za-z0-9._-]", "_", model_name)[:60]
+        digest = hashlib.sha256(model_name.encode()).hexdigest()[:8]
+        return f"{readable}-{digest}"
+
+    @staticmethod
     def _text_encoder_cache_path(model_name: str) -> Path:
-        """On-disk cache path for the extracted text tower of `model_name`.
+        """On-disk cache path for the `OpenCLIPTextEncoder` of `model_name`.
 
         The file is a pickled open_clip module, which can break under another
         open_clip version, so the name includes the version and an upgrade
         rebuilds the cache.
         """
-        safe_name = model_name.replace("/", "_")
-        return Path(f"./data/models/{safe_name}_text_open_clip-{open_clip.__version__}.pth")
+        stem = CLIPModelManager._cache_file_stem(model_name)
+        return Path(f"./data/models/{stem}_text-encoder_open_clip-{open_clip.__version__}.pth")
 
     @staticmethod
     def _tokenizer_cache_path(model_name: str) -> Path:
         """On-disk cache path for the tokenizer of `model_name`, versioned like the text tower's."""
-        safe_name = model_name.replace("/", "_")
-        return Path(f"./data/tokenizers/{safe_name}_open_clip-{open_clip.__version__}.pth")
+        stem = CLIPModelManager._cache_file_stem(model_name)
+        return Path(f"./data/tokenizers/{stem}_open_clip-{open_clip.__version__}.pth")
 
 
 class TextModelManager(ModelManager):

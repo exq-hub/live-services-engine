@@ -28,13 +28,16 @@ eager-vs-lazy scoping, not about actually downloading or running a model.
 """
 
 import json
+import re
 from unittest.mock import MagicMock
 
+import open_clip
 import pytest
+import torch
 
 from app.core.config import ConfigManager
 from app.core.exceptions import ModelLoadError
-from app.core.models import CLIPModelManager, TextModelManager
+from app.core.models import CLIPModelManager, OpenCLIPTextEncoder, TextModelManager
 
 from .conftest import collection_toml, index_toml
 
@@ -130,7 +133,16 @@ def multi_model_config(write_config, dummy_files):
 
 
 @pytest.fixture
-def mocked_clip_loading(monkeypatch):
+def single_pretrained_tag(monkeypatch):
+    """Give every made-up model name one open_clip pretrained tag, like SigLIP."""
+    monkeypatch.setattr(
+        "app.core.models.open_clip.list_pretrained_tags_by_model",
+        lambda name: ["fake-tag"],
+    )
+
+
+@pytest.fixture
+def mocked_clip_loading(monkeypatch, single_pretrained_tag):
     create_model_calls = []
 
     def fake_create_model(model_name, **kwargs):
@@ -196,7 +208,9 @@ class TestCLIPModelManagerInitialize:
         assert "model-two" not in mocked_clip_loading
         assert "model-preload-c" not in mocked_clip_loading
 
-    def test_loads_from_cache_when_present(self, multi_model_config, monkeypatch):
+    def test_loads_from_cache_when_present(
+        self, multi_model_config, monkeypatch, single_pretrained_tag
+    ):
         create_model_calls = []
         get_tokenizer_calls = []
         monkeypatch.setattr(
@@ -326,6 +340,92 @@ class TestCLIPModelManagerRequiresPretrainedWeights:
         assert manager.loaded_model_names() == []
 
 
+class TestCLIPModelManagerPretrainedTag:
+    """Uses open_clip's built-in list of pretrained weights, which needs no network."""
+
+    @pytest.mark.parametrize(
+        "model_name", ["hf-hub:timm/ViT-B-16-SigLIP2-512", "local-dir:/models/clip"]
+    )
+    def test_hub_and_local_names_need_no_tag(self, model_name):
+        assert CLIPModelManager._pretrained_tag(model_name) is None
+
+    def test_plain_name_with_one_set_of_weights_uses_it(self):
+        assert CLIPModelManager._pretrained_tag("ViT-B-16-SigLIP2-512") == "webli"
+
+    def test_plain_name_with_several_sets_of_weights_lists_hub_names(self):
+        with pytest.raises(ModelLoadError, match="several pretrained weights") as e:
+            CLIPModelManager._pretrained_tag("ViT-B-32")
+
+        assert "hf-hub:timm/vit_base_patch32_clip_224.openai" in str(e.value)
+        assert "hf-hub:laion/CLIP-ViT-B-32-laion2B-s34B-b79K" in str(e.value)
+
+    def test_unknown_plain_name_fails(self):
+        with pytest.raises(ModelLoadError, match="no pretrained weights"):
+            CLIPModelManager._pretrained_tag("not-a-model")
+
+    def test_startup_checks_lazily_loaded_indexes_too(
+        self, multi_model_config, mocked_clip_loading, monkeypatch
+    ):
+        """model-extra isn't preloaded, but its bad name still fails at startup."""
+        monkeypatch.setattr(
+            "app.core.models.open_clip.list_pretrained_tags_by_model",
+            lambda name: ["a", "b"] if name == "model-extra" else ["fake-tag"],
+        )
+        monkeypatch.setattr(
+            "app.core.models.open_clip.get_pretrained_cfg",
+            lambda name, tag: {"hf_hub": f"org/{name}-{tag}/"},
+        )
+        manager = CLIPModelManager(multi_model_config)
+
+        with pytest.raises(ModelLoadError, match="hf-hub:org/model-extra-a"):
+            manager.initialize_models()
+
+        assert mocked_clip_loading == []
+
+
+TINY_VISION_CFG = {
+    "image_size": 32, "layers": 1, "width": 32, "head_width": 32, "patch_size": 16
+}
+TINY_TEXT_CFG = {
+    "context_length": 8, "vocab_size": 64, "width": 32, "heads": 1, "layers": 1
+}
+
+
+class TestOpenCLIPTextEncoder:
+    """Tiny untrained open_clip models of both kinds, built offline."""
+
+    @pytest.mark.parametrize(
+        "model_class",
+        [open_clip.CLIP, open_clip.CustomTextCLIP],
+        ids=["classic", "custom-text"],
+    )
+    def test_matches_encode_text_and_drops_the_image_tower(self, model_class):
+        torch.manual_seed(0)
+        model = model_class(
+            embed_dim=8, vision_cfg=TINY_VISION_CFG, text_cfg=TINY_TEXT_CFG
+        ).eval()
+        tokens = torch.randint(0, 64, (2, 8))
+        expected = model.encode_text(tokens)
+
+        encoder = OpenCLIPTextEncoder(model).eval()
+
+        assert torch.equal(encoder(tokens), expected)
+        assert encoder.model.visual is None
+
+    def test_survives_the_disk_cache_round_trip(self, tmp_path):
+        model = open_clip.CLIP(
+            embed_dim=8, vision_cfg=TINY_VISION_CFG, text_cfg=TINY_TEXT_CFG
+        ).eval()
+        encoder = OpenCLIPTextEncoder(model).eval()
+        tokens = torch.randint(0, 64, (2, 8))
+        path = tmp_path / "encoder.pth"
+
+        torch.save(encoder, path)
+        loaded = torch.load(path, weights_only=False)
+
+        assert torch.equal(loaded(tokens), encoder(tokens))
+
+
 class TestCLIPModelManagerCachePath:
     def test_cache_path_is_unique_per_model_name(self):
         path_a = CLIPModelManager._text_encoder_cache_path("model-one")
@@ -344,6 +444,33 @@ class TestCLIPModelManagerCachePath:
     def test_tokenizer_cache_path_sanitizes_slashes(self):
         path = CLIPModelManager._tokenizer_cache_path("org/model-name")
         assert "/" not in path.name
+
+    CACHE_PATHS = [
+        CLIPModelManager._text_encoder_cache_path,
+        CLIPModelManager._tokenizer_cache_path,
+    ]
+
+    @pytest.mark.parametrize("cache_path", CACHE_PATHS)
+    @pytest.mark.parametrize(
+        "model_name",
+        [
+            "hf-hub:timm/vit_base_patch32_clip_224.openai",
+            "local-dir:C:\\models\\my-clip",
+            "local-dir:/home/user/models/my clip",
+        ],
+    )
+    def test_cache_file_name_is_valid_on_windows(self, cache_path, model_name):
+        """Windows file names can't hold : \\ / * ? " < > | or spaces we'd trip over."""
+        assert re.fullmatch(r"[A-Za-z0-9._-]+", cache_path(model_name).name)
+
+    @pytest.mark.parametrize("cache_path", CACHE_PATHS)
+    def test_names_that_clean_up_the_same_get_different_files(self, cache_path):
+        assert cache_path("org/model") != cache_path("org_model")
+
+    @pytest.mark.parametrize("cache_path", CACHE_PATHS)
+    def test_long_local_dir_names_give_short_file_names(self, cache_path):
+        model_name = "local-dir:C:\\" + "\\".join(["a-long-folder-name"] * 20)
+        assert len(cache_path(model_name).name) <= 120
 
     def test_text_encoder_and_tokenizer_cache_paths_differ(self):
         text_path = CLIPModelManager._text_encoder_cache_path("model-one")
