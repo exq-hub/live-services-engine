@@ -28,6 +28,7 @@ eager-vs-lazy scoping, not about actually downloading or running a model.
 """
 
 import json
+import re
 from unittest.mock import MagicMock
 
 import open_clip
@@ -443,6 +444,33 @@ class TestCLIPModelManagerCachePath:
     def test_tokenizer_cache_path_sanitizes_slashes(self):
         path = CLIPModelManager._tokenizer_cache_path("org/model-name")
         assert "/" not in path.name
+
+    CACHE_PATHS = [
+        CLIPModelManager._text_encoder_cache_path,
+        CLIPModelManager._tokenizer_cache_path,
+    ]
+
+    @pytest.mark.parametrize("cache_path", CACHE_PATHS)
+    @pytest.mark.parametrize(
+        "model_name",
+        [
+            "hf-hub:timm/vit_base_patch32_clip_224.openai",
+            "local-dir:C:\\models\\my-clip",
+            "local-dir:/home/user/models/my clip",
+        ],
+    )
+    def test_cache_file_name_is_valid_on_windows(self, cache_path, model_name):
+        """Windows file names can't hold : \\ / * ? " < > | or spaces we'd trip over."""
+        assert re.fullmatch(r"[A-Za-z0-9._-]+", cache_path(model_name).name)
+
+    @pytest.mark.parametrize("cache_path", CACHE_PATHS)
+    def test_names_that_clean_up_the_same_get_different_files(self, cache_path):
+        assert cache_path("org/model") != cache_path("org_model")
+
+    @pytest.mark.parametrize("cache_path", CACHE_PATHS)
+    def test_long_local_dir_names_give_short_file_names(self, cache_path):
+        model_name = "local-dir:C:\\" + "\\".join(["a-long-folder-name"] * 20)
+        assert len(cache_path(model_name).name) <= 120
 
     def test_text_encoder_and_tokenizer_cache_paths_differ(self):
         text_path = CLIPModelManager._text_encoder_cache_path("model-one")

@@ -43,7 +43,9 @@ A module-level ``container`` instance is exported for use throughout the
 application (imported by route dependencies, the lifespan handler, etc.).
 """
 
+import hashlib
 import logging
+import re
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -340,6 +342,19 @@ class CLIPModelManager(ModelManager):
         )
 
     @staticmethod
+    def _cache_file_stem(model_name: str) -> str:
+        """A cache file name stem for `model_name` that is valid on every OS.
+
+        Characters other than letters, digits, '.', '_' and '-' (such as the
+        ':' of hf-hub: or the '\\' of a Windows local-dir: path) become '_',
+        and the result is cut to 60 characters. A short hash of the full name
+        keeps apart names that clean up to the same text.
+        """
+        readable = re.sub(r"[^A-Za-z0-9._-]", "_", model_name)[:60]
+        digest = hashlib.sha256(model_name.encode()).hexdigest()[:8]
+        return f"{readable}-{digest}"
+
+    @staticmethod
     def _text_encoder_cache_path(model_name: str) -> Path:
         """On-disk cache path for the `OpenCLIPTextEncoder` of `model_name`.
 
@@ -347,14 +362,14 @@ class CLIPModelManager(ModelManager):
         open_clip version, so the name includes the version and an upgrade
         rebuilds the cache.
         """
-        safe_name = model_name.replace("/", "_")
-        return Path(f"./data/models/{safe_name}_text-encoder_open_clip-{open_clip.__version__}.pth")
+        stem = CLIPModelManager._cache_file_stem(model_name)
+        return Path(f"./data/models/{stem}_text-encoder_open_clip-{open_clip.__version__}.pth")
 
     @staticmethod
     def _tokenizer_cache_path(model_name: str) -> Path:
         """On-disk cache path for the tokenizer of `model_name`, versioned like the text tower's."""
-        safe_name = model_name.replace("/", "_")
-        return Path(f"./data/tokenizers/{safe_name}_open_clip-{open_clip.__version__}.pth")
+        stem = CLIPModelManager._cache_file_stem(model_name)
+        return Path(f"./data/tokenizers/{stem}_open_clip-{open_clip.__version__}.pth")
 
 
 class TextModelManager(ModelManager):
