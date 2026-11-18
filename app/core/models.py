@@ -58,6 +58,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
+from .. import __version__
 from .config import ConfigManager, LSEConfig
 from .exceptions import ModelLoadError
 from ..repositories.database_repository import DatabaseRepository
@@ -416,7 +417,7 @@ class ApplicationContainer:
 
     def _display_system_info(self):
         """Display system information."""
-        system_name = Text("Live Services Engine (v0.2)", style="bold green")
+        system_name = Text(f"Live Services Engine (v{__version__})", style="bold green")
         console.print(
             Panel(system_name, title="Exquisitor", border_style="bold yellow")
         )

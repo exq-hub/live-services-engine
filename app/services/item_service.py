@@ -40,7 +40,6 @@ from app.repositories.database_repository import DatabaseRepository
 
 from ..schemas import (
     ItemBatchRequest,
-    ItemDetailRequest,
     ItemRequest,
     IsExcludedRequest,
 )
@@ -138,14 +137,6 @@ class ItemService:
             result["metadata"] = item.get("metadata") or {}
 
         return result
-
-    def get_item_detailed_info(self, request: ItemDetailRequest) -> Dict[str, Any]:
-        """Get detailed information for an item.
-
-        Deprecated: use `get_item_info` with ``filterIds``. This fetches
-        the full base info and throws everything away except ``metadata``.
-        """
-        return self.get_item_info(request).get("metadata", {})
 
     def get_related_items(
         self,

@@ -136,7 +136,7 @@ async def get_item_detailed_info(
     ``metadata``.
     """
     try:
-        result = item_service.get_item_detailed_info(request)
+        info = item_service.get_item_info(request)
 
         background_tasks.add_task(
             logging_service.log_item_request,
@@ -145,10 +145,10 @@ async def get_item_detailed_info(
             request.session_info.modelId,
             request.session_info.collection,
             request.mediaId,
-            request.mediaId,
+            info["name"],
         )
 
-        return result
+        return info.get("metadata", {})
 
     except DatabaseError as e:
         raise HTTPException(status_code=404, detail=str(e))
