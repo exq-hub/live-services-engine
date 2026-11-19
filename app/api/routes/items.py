@@ -75,7 +75,6 @@ async def get_item_base_info(
             request.session_info.modelId,
             request.session_info.collection,
             request.mediaId,
-            result["name"],
             {"mediaType": result["mediaType"]},
         )
 
@@ -110,7 +109,6 @@ async def get_items_base_info(
             request.session_info.modelId,
             request.session_info.collection,
             request.mediaIds,
-            [item["name"] for item in result["items"]],
             {"missing": result["missing"]},
         )
 
@@ -145,7 +143,6 @@ async def get_item_detailed_info(
             request.session_info.modelId,
             request.session_info.collection,
             request.mediaId,
-            info["name"],
         )
 
         return info.get("metadata", {})
@@ -180,7 +177,6 @@ async def get_related_items(
             request.session_info.modelId,
             request.session_info.collection,
             request.mediaId,
-            info["name"],
         )
 
         return result
@@ -213,7 +209,6 @@ async def is_item_excluded(
             request.session_info.modelId,
             request.session_info.collection,
             request.itemId,
-            info["name"],
             {"excluded": result["excludedOrNot"]},
         )
 

@@ -66,6 +66,28 @@ class TestFormatItem:
             == "https://localhost:5000/originals/videos/00001.mp4?token=tok"
         )
 
+    def test_returns_exactly_the_item_info_fields(self, collection_config):
+        service = ItemService(MagicMock(), MagicMock())
+
+        result = service._format_item(7, _item(None), collection_config, False)
+
+        assert set(result) == {
+            "id",
+            "mediaId",
+            "mediaType",
+            "thumbPath",
+            "srcPath",
+            "groupId",
+        }
+
+    def test_adds_metadata_when_filters_are_requested(self, collection_config):
+        service = ItemService(MagicMock(), MagicMock())
+        item = {**_item(None), "metadata": {"Start (ms)": 100}}
+
+        result = service._format_item(7, item, collection_config, True)
+
+        assert result["metadata"] == {"Start (ms)": 100}
+
     def test_media_with_a_thumbnail_gets_the_full_url(self, collection_config):
         service = ItemService(MagicMock(), MagicMock())
 

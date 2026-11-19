@@ -244,19 +244,17 @@ class LoggingService:
         model_id: int,
         collection: str,
         item_id: Union[int, List[int]],
-        item_name: Union[str, List[str]],
         additional_data: Optional[Dict[str, Any]] = None,
     ):
         """Log item-related requests.
 
-        A batch request passes lists of IDs and names instead of single values.
+        A batch request passes a list of IDs instead of a single ID.
         """
         data = {
             "session": session,
             "modelId": model_id,
             "collection": collection,
             "item": item_id,
-            "mediaName": item_name,
         }
         if additional_data:
             data.update(additional_data)
