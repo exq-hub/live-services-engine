@@ -121,7 +121,6 @@ class ItemService:
         thumbnail_uri = item["thumbnail_uri"]
         result = {
             "id": media_id,
-            "name": item["item_id"],
             "mediaId": media_id,
             "mediaType": item["source_type"],
             "thumbPath": (
