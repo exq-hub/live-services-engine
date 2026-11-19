@@ -166,10 +166,6 @@ async def get_related_items(
             request, sort_by=request.sortBy, sort_order=request.sortOrder
         )
 
-        info = item_service.get_item_info(
-            ItemRequest(mediaId=request.mediaId, session_info=request.session_info)
-        )
-
         background_tasks.add_task(
             logging_service.log_item_request,
             "Get Related Info For Item",
@@ -197,10 +193,6 @@ async def is_item_excluded(
     """Check if item is in an excluded group."""
     try:
         result = item_service.is_item_excluded(request)
-
-        info = item_service.get_item_info(
-            ItemRequest(mediaId=request.itemId, session_info=request.session_info)
-        )
 
         background_tasks.add_task(
             logging_service.log_item_request,
