@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Ujjwal Sharma and Omar Shahbaz Khan
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # Makefile for Sphinx documentation
 
 # You can set these variables from the command line, and also

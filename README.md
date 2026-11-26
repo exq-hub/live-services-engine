@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Ujjwal Sharma and Omar Shahbaz Khan
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # Live Services Engine (LSE)
 
 The Live Services Engine is the backend for [Exquisitor](https://exquisitor.org/), a multimedia search and exploration system. It provides text-to-image similarity search using CLIP, relevance feedback using SVMs, and faceted metadata filtering across large media collections.
