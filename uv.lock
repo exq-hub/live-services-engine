@@ -705,18 +705,6 @@ wheels = [
 ]
 
 [[package]]
-name = "licenseheaders"
-version = "0.8.8"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "regex" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/ba/a1/70ad273ee6f78cb8d6acdd0bac035a8ab4f392dd83125ca3967632cd3937/licenseheaders-0.8.8.tar.gz", hash = "sha256:feb49c1a869f415431503ed56f4f3be48a4161495d3082f44af76c42c6a7e9ef", size = 21844, upload-time = "2021-04-08T18:48:46.932Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c8/03/99102b3772bdc5d25fc7fe5f5fb862c54bb6e863991f50d02667999942c1/licenseheaders-0.8.8-py3-none-any.whl", hash = "sha256:3b159228b37bbba98bd01448c41a5eff773ab26ac5b14ac98c53d06dbc807696", size = 21272, upload-time = "2021-04-08T18:48:43.871Z" },
-]
-
-[[package]]
 name = "lse"
 version = "0.3.0"
 source = { virtual = "." }
@@ -749,7 +737,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "licenseheaders" },
     { name = "pytest" },
     { name = "reuse" },
     { name = "ruff" },
@@ -785,7 +772,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "licenseheaders", specifier = ">=0.8.8" },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "reuse", specifier = ">=5.1.1" },
     { name = "ruff", specifier = ">=0.11.12" },
